@@ -1,47 +1,52 @@
-ATI Straton X Bluetooth integration — experimental version 0.1.1
+# ATI Straton X for Home Assistant
 
-Uses Home Assistant's Bluetooth integration and existing connectable ESPHome
-proxies. No separate proxy key, Wi-Fi address, cloud account or firmware flash.
+Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Install custom_components/ati_straton_x in Home Assistant's config directory,
-restart Home Assistant, then open Settings > Devices & services. Configure each
-discovered StratonX light, or Add integration > ATI Straton X to select a visible
-light. Default ATI passcode is 0. Identity is verified through GATT when adding.
+Experimental version 0.1.1. Tested with light firmware 1.4.0.2.
 
-Features
-- One device per unique fixture serial number; duplicate setup rejected.
-- Actual tank ID read every poll and attached to all entities. Group membership
-  is metadata in this release, not a writable Home Assistant light group.
-- Two fixture temperature sensors and controller temperature, in Celsius.
-- Firmware, last successful poll, schedule-point count and complete schedule
-  nodes as attributes, plus schedule last-read timestamp.
-- Refresh schedule button.
-- Explicit targeted UTC clock-sync button, restricted to tested firmware 1.4.0.2.
-  A successful button call confirms transport only; it is not clock readback.
+## Installation with HACS
 
-Polling
-Default 60 seconds per fixture; configurable 30–300 seconds in integration options.
-All fixtures and setup flows share one connection lock, so sessions never overlap.
-Actual cadence includes connection time and queueing. Sessions disconnect after
-each poll. Schedule reads occur at startup and every 15 minutes, or on manual
-refresh. Failed polls mark entities unavailable and back off up to 15 minutes.
-Discovery uses Home Assistant's shared scanner rather than starting another scan.
+1. Open **HACS** and select **Custom repositories** from the menu.
+2. Add `https://github.com/gardiner4/ha-stratonx` with the type **Integration**.
+3. Find **ATI Straton X** in HACS and download it.
+4. Restart Home Assistant.
 
-Tank isolation
-Assign the frag-tank light to a separate tank in ATI first. The integration reads
-that ID automatically. This release has no schedule-write or channel-control
-commands, so it cannot broadcast a schedule to either group. Group isolation for
-future writes still requires testing against two separate tank groups.
+### Manual installation
 
-Limitations
-Current channel output is NOT yet decoded or exposed. Schedule channel values
-are stored targets (0–1023), not optical output or verified live PWM levels.
-No brightness/on-off entities or schedule editor until write behavior is verified.
-Protocol evidence comes from firmware 1.3.0.6 and live reads on 1.4.0.2.
-A concurrent schedule edit with an unchanged node count may produce a mixed
-snapshot; avoid editing in ATI during refresh. Refresh again after app edits.
-Manual diagnostic integration remains separate and should not be run while this
-integration is polling. It is retained for protocol investigation and rollback.
+Copy the `custom_components/ati_straton_x` folder into Home Assistant's `/config/custom_components/` folder, then restart Home Assistant.
 
-Rollback: disable the ATI Straton X entries in Devices & services. This stops
-polling without deleting devices or changing any lamp's saved program.
+## Add your lights
+
+1. Make sure Home Assistant has a working Bluetooth adapter or connectable ESPHome Bluetooth proxy within range of the lights.
+2. Open **Settings > Devices & services**.
+3. Configure a discovered Straton X light, or choose **Add integration > ATI Straton X** and select a light.
+4. Enter the light's passcode if prompted. The default is `0`.
+5. Repeat for each light.
+
+Each light appears as a separate device. Its tank ID is read automatically; manage tank membership in the ATI app.
+
+## Available features
+
+- Two light temperature sensors and a controller temperature sensor.
+- Firmware version, tank ID, and last successful update.
+- Saved lighting schedule, available in the schedule sensor's attributes.
+- **Refresh schedule** button.
+- **Sync clock** button for firmware 1.4.0.2. This sends the current UTC time; it does not verify the resulting clock reading.
+
+## Updates
+
+Lights are polled every **60 seconds** by default. Change this to **30–300 seconds** in the integration's options.
+
+Schedules refresh every **15 minutes**, or when you press **Refresh schedule**. After editing a schedule in the ATI app, finish the edit before refreshing it in Home Assistant.
+
+## Current limitations
+
+This version does not support on/off control, brightness changes, schedule editing, or live channel output. The displayed schedule contains saved channel settings, not current output.
+
+Other firmware versions have not been verified.
+
+## Troubleshooting
+
+If a light is missing or unavailable, check Bluetooth range and that the adapter or proxy supports active connections. Failed polls retry automatically with increasing delays.
+
+To stop polling, disable the light's integration entry under **Settings > Devices & services**.
