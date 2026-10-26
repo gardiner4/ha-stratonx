@@ -1,4 +1,4 @@
-/* ATI Straton X schedule / live card 0.4.2, no external dependencies. */
+/* ATI Straton X schedule / live card 0.5.0, no external dependencies. */
 export const CHANNELS = [
   ["UV / Violet", "#c43ce3"], ["Royal blue", "#386bff"], ["Blue", "#00a7ef"],
   ["Cyan / Horti white", "#00b8b9"], ["White", "#9ba6b6"], ["Red", "#ef5555"],
@@ -84,6 +84,17 @@ class StratonXScheduleCard extends HTMLElement {
     };
   }
 
+  async publishPresets() {
+    if(this.busy || !this.config.tank_id)return;
+    const presets=presetsFor(this.config);
+    if(!presets.length){this.feedback="Add named presets in the card editor first.";this.render();return;}
+    this.busy=true;this.feedback="Publishing presets…";this.render();
+    try {
+      await this._hass.callService("ati_straton_x","publish_presets",{tank_id:this.config.tank_id,presets:JSON.parse(JSON.stringify(presets))});
+      this.feedback="Published for automations. Call ati_straton_x.activate_preset with this tank ID and preset name. Publish again after editing.";
+    } catch(error) {this.feedback="Publish failed: "+(error?.message||String(error));}
+    finally{this.busy=false;this.render();}
+  }
   async sendLive(resume=false) {
     if(this.busy || !this.config.tank_id || (!resume && !this.draftReady)) return;
     const tank=this.config.tank_id;
@@ -115,6 +126,7 @@ class StratonXScheduleCard extends HTMLElement {
     return '<div class="live-panel"><p class="notice">Temporary mix for '+(tank?'all lights in ATI tank '+escape(tank):'a tank group')+'. The saved schedule resumes when the timer ends.</p>'+
       (!tank?'<p>Set a Tank ID in this card’s configuration to enable group controls.</p>':'')+
       '<div class="presets">'+presetsFor(this.config).map((p,i)=>'<button data-named="'+i+'"'+disabled+'>'+escape(p.name)+'</button>').join("")+'<button data-preset="schedule"'+disabled+'>Copy schedule estimate</button><button data-preset="off"'+disabled+'>Temporary off</button></div>'+
+      '<button class="publish"'+(this.busy||!tank?' disabled':'')+'>Publish presets to automations</button><p class="foot">Publishing saves the named card presets, not unsaved slider adjustments. Matching names in this tank are updated; lights do not change.</p>'+
       '<p class="foot">Presets fill the sliders and duration; press Apply to send. Edit named presets in the dashboard card editor.</p>'+
       CHANNELS.map(([name,color],i)=>'<label class="live-channel"><span>'+name+'</span><output id="level-'+i+'">'+this.draft[i]+'%</output><input class="live-slider" data-channel="'+i+'" type="range" min="0" max="100" step="1" value="'+this.draft[i]+'" style="accent-color:'+color+'" aria-label="'+name+' requested percentage"'+disabled+'></label>').join("")+
       '<label class="duration-label">Duration (minutes)<input class="duration" type="number" min="1" max="60" step="1" value="'+this.duration+'"'+disabled+'></label>'+
@@ -123,6 +135,7 @@ class StratonXScheduleCard extends HTMLElement {
       '<details open><summary>Group timers · last poll</summary><ul>'+(timers||'<li>No configured group members available</li>')+'</ul></details></div>';
   }
   bindLive(members) {
+    this.shadowRoot.querySelector(".publish").onclick=()=>this.publishPresets();
     this.shadowRoot.querySelectorAll("[data-named]").forEach(button=>button.onclick=()=>{
       const preset=presetsFor(this.config)[Number(button.dataset.named)];
       this.draft=[...preset.channels];this.duration=preset.duration_minutes;this.draftReady=true;
@@ -195,7 +208,7 @@ class StratonXScheduleCard extends HTMLElement {
     const cursor = inspected ? '<line class="cursor" x1="'+x(selected)+'" x2="'+x(selected)+'" y1="36" y2="212"/>' : "";
     this.shadowRoot.innerHTML = `<style>
       :host{display:block}ha-card{display:block;overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#fff));color:var(--primary-text-color,#182435);border-radius:var(--ha-card-border-radius,18px)}
-      .tabs{display:flex;gap:8px;margin:14px 0}.tabs button,.presets button,.actions button{border:1px solid var(--divider-color,#dbe1e9);border-radius:9px;padding:10px;background:transparent}.tabs button[aria-selected=true],.apply{background:var(--primary-color,#008db5)!important;color:var(--text-primary-color,#fff)}button:disabled{opacity:.45;cursor:default}.presets,.actions{display:flex;gap:8px;flex-wrap:wrap}.live-channel{display:grid;grid-template-columns:1fr auto;gap:5px;margin:18px 0;font-size:14px}.live-channel input{grid-column:1/-1}.live-channel output{font-weight:700}.duration-label{display:flex;justify-content:space-between;align-items:center;margin:20px 0;font-size:14px}.duration{width:70px;padding:8px;border:1px solid var(--divider-color,#aaa);border-radius:6px;background:transparent;color:inherit}.feedback,details{font-size:12px;line-height:1.6}.feedback{min-height:38px}
+      .tabs{display:flex;gap:8px;margin:14px 0}.tabs button,.presets button,.actions button,.publish{border:1px solid var(--divider-color,#dbe1e9);border-radius:9px;padding:10px;background:transparent}.tabs button[aria-selected=true],.apply{background:var(--primary-color,#008db5)!important;color:var(--text-primary-color,#fff)}button:disabled{opacity:.45;cursor:default}.presets,.actions{display:flex;gap:8px;flex-wrap:wrap}.live-channel{display:grid;grid-template-columns:1fr auto;gap:5px;margin:18px 0;font-size:14px}.live-channel input{grid-column:1/-1}.live-channel output{font-weight:700}.duration-label{display:flex;justify-content:space-between;align-items:center;margin:20px 0;font-size:14px}.duration{width:70px;padding:8px;border:1px solid var(--divider-color,#aaa);border-radius:6px;background:transparent;color:inherit}.feedback,details{font-size:12px;line-height:1.6}.feedback{min-height:38px}
       .wrap{padding:20px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h2{margin:4px 0;font-size:20px;font-weight:650}.eyebrow{font-size:10px;font-weight:700;letter-spacing:1.8px;color:var(--secondary-text-color,#66768b)}
       .pill{padding:6px 10px;border:1px solid var(--divider-color,#dbe1e9);border-radius:20px;font-size:11px;white-space:nowrap}
       .group-info{font-size:12px;margin-top:12px;color:var(--secondary-text-color,#66768b)}.group-info label{display:block;margin-top:8px}.member{max-width:100%;padding:5px;color:inherit;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dbe1e9);border-radius:5px}.notice{font-size:12px;line-height:1.6;color:var(--secondary-text-color,#66768b);min-height:38px;margin:12px 0 4px}

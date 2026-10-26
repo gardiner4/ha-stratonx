@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.4.2. Tested with light firmware 1.4.0.2.
+Experimental version 0.5.0. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -86,10 +86,10 @@ The Schedule tab is read-only; the Live mode tab provides explicit timed group c
 
 ### Add the card
 
-1. Update the integration to **0.4.2 or later** and restart Home Assistant.
+1. Update the integration to **0.5.0 or later** and restart Home Assistant.
 2. Enable **Advanced mode** in your Home Assistant profile if Resources is not visible.
 3. Open **Settings > Dashboards > Resources**, and add this URL as a **JavaScript module**:
-   `/ati_straton_x/stratonx-schedule-card.js?v=0.4.2`
+   `/ati_straton_x/stratonx-schedule-card.js?v=0.5.0`
 4. Reload your browser or Companion app, edit a dashboard, and add **ATI Straton X Schedule**.
 5. Enter an ATI **Tank ID** for one card per group, or select a **Schedule points** sensor for a single-light card.
 
@@ -170,7 +170,7 @@ Presets belong to the card, not the fixture firmware or a global preset library.
 Register this JavaScript module in **Settings → Dashboards → Resources** after installing the integration:
 
 ```text
-/ati_straton_x/stratonx-schedule-card.js?v=0.4.2
+/ati_straton_x/stratonx-schedule-card.js?v=0.5.0
 ```
 
 Then add a manual card with the following YAML. Replace `12345` with your ATI tank ID (shown in the integration's entity attributes). The Maintenance values below are an example mix; adjust them for your aquarium.
@@ -193,3 +193,38 @@ Channel order is **UV / Violet, Royal blue, Blue, Cyan / Horti white, White, Red
 For a second tank, add another card with its own Tank ID and presets. Group commands affect all lights in the ATI tank group, potentially including lights not configured in Home Assistant. Supported firmware and group availability requirements still apply.
 
 The card is bundled at [custom_components/ati_straton_x/www/stratonx-schedule-card.js](custom_components/ati_straton_x/www/stratonx-schedule-card.js); there is no separate frontend repository to install.
+
+## Use presets in scripts, automations, and Alexa (0.5.0)
+
+1. Save your named presets in the dashboard card editor.
+2. Open **Live mode** and press **Publish presets to automations**. Publishing saves the named card definitions, not temporary slider edits, and does not change the lights.
+3. In a script or automation, use **ATI Straton X: Activate published preset** with the Tank ID and preset name.
+
+Published presets are stored in Home Assistant and survive restarts. They work with the dashboard closed. Names are case-insensitive within each tank. Publishing updates matching names and retains other published names. After changing a card preset, publish again; scripts then use the new levels and duration without edits. If different cards publish the same name for the same tank, the last publication wins.
+
+### Script example
+
+Create a script in **Settings → Automations & scenes → Scripts**, choose **Edit in YAML**, and use the following example. Replace `12345` with your Tank ID and `Photo` with a published name. A complete example is also in [examples/preset-script.yaml](examples/preset-script.yaml).
+
+```yaml
+alias: Aquarium photo mode
+mode: single
+sequence:
+  - action: ati_straton_x.activate_preset
+    data:
+      tank_id: 12345
+      name: Photo
+```
+
+The lamp's timer restores its saved schedule; no delay or restore step is needed in the script. Repeated runs after the previous call completes restart the preset timer. Existing firmware checks, group availability checks and timer verification apply. A missing/deleted preset fails rather than guessing a mix.
+
+Expose the resulting script through your existing Home Assistant Alexa connection, then activate it by name or use it in an Alexa routine. Alexa configuration/discovery is separate from this integration. See the [official Alexa Smart Home documentation](https://www.home-assistant.io/integrations/alexa.smart_home/#script).
+
+### Published preset management
+
+- `ati_straton_x.publish_presets`: Tank ID and a list of `name`, `duration_minutes`, and six `channels`; saves without sending light commands.
+- `ati_straton_x.activate_preset`: Tank ID and name; starts the saved timed mix.
+- `ati_straton_x.list_presets`: Tank ID; returns the saved definitions as response data.
+- `ati_straton_x.delete_preset`: Tank ID and name; removes the published copy without changing lights or the card. Removing/renaming a preset in the card does not delete the published copy; use this action for cleanup.
+
+Published presets are included in Home Assistant configuration backups. Card presets and published presets are separate until you press Publish; editing a preset never silently changes an automation's behavior.

@@ -92,3 +92,67 @@ resume_tank_schedule:
           min: 1
           max: 65534
           mode: box
+
+publish_presets:
+  name: Publish named presets
+  description: Save or update named presets for scripts and automations. Does not change lights. Names are case-insensitive within each tank. Other published names are retained.
+  fields:
+    tank_id:
+      name: Tank ID
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 65534
+          mode: box
+    presets:
+      name: Presets
+      required: true
+      selector:
+        object:
+list_presets:
+  name: List published presets
+  description: Return the published presets for a tank, including channel levels and duration.
+  fields:
+    tank_id:
+      name: Tank ID
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 65534
+          mode: box
+activate_preset:
+  name: Activate published preset
+  description: Run the latest published preset by tank ID and name. Uses the same firmware, availability and timer checks as Set tank live mode. Lights resume their saved schedules when the timer ends.
+  fields:
+    tank_id:
+      name: Tank ID
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 65534
+          mode: box
+    name:
+      name: Preset name
+      required: true
+      selector:
+        text:
+delete_preset:
+  name: Delete published preset
+  description: Remove a published preset from Home Assistant. Does not alter lights or card configuration. Scripts using the deleted preset will fail.
+  fields:
+    tank_id:
+      name: Tank ID
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 65534
+          mode: box
+    name:
+      name: Preset name
+      required: true
+      selector:
+        text:

@@ -195,7 +195,19 @@ const assert = require("node:assert/strict");
   await page.evaluate(()=>card.setConfig({tank_id:42,presets:[{name:"Photo",duration_minutes:10,channels:[0,100,100,0,0,0]},{name:"Maintenance",duration_minutes:30,channels:[0,20,20,20,20,0]}]}));
   await page.locator('[data-named="0"]').click();
   await page.screenshot({path:path.join(root,"card-named-presets.png"),fullPage:true});
+
+  await page.evaluate(()=>{window.published=[];card.hass={states,callService:async(d,s,data)=>published.push({d,s,data})};});
+  await page.locator(".publish").click();
+  assert.equal(await page.evaluate(()=>published.length),1);
+  assert.equal(await page.evaluate(()=>published[0].s),"publish_presets");
+  assert.equal(await page.evaluate(()=>published[0].data.tank_id),42);
+  assert.equal(await page.evaluate(()=>published[0].data.presets[0].name),"Photo");
+  assert.match(await page.locator(".feedback").innerText(),/Published for automations/);
+  await page.evaluate(()=>card.hass={states,callService:async()=>{throw new Error("Storage failed");}});
+  await page.locator(".publish").click();
+  assert.match(await page.locator(".feedback").innerText(),/Publish failed.*Storage failed/);
   assert.deepEqual(errors,[]);
+
   console.log("PASS: rendering, six curves, interpolation, time inspection, toggles, override/unknown/unavailable states, renamed sensors, escaping and editor. Screenshots saved.");
  } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

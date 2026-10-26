@@ -1,0 +1,7 @@
+alias: Aquarium photo mode
+mode: single
+sequence:
+  - action: ati_straton_x.activate_preset
+    data:
+      tank_id: 12345 # Replace with your ATI tank ID.
+      name: Photo # Publish this named preset from the card first.
