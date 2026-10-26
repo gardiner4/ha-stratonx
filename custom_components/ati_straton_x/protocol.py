@@ -1,6 +1,24 @@
 """Strict parsers for firmware-traced read commands. No schedule writes."""
 import json
 import re
+from datetime import datetime, timezone
+
+
+def clocks(value):
+    """Decode C6: RTC UTC and ESP local calendar, each byte biased by one."""
+    if not 16 <= len(value) <= 200 or any(value[16:]) or any(value[i] != 255 for i in (0, 7, 15)):
+        raise ValueError("Unexpected clock response")
+    result = {"rtc_time": None, "local_time": None}
+    for offset, key in ((1, "rtc_time"), (8, "local_time")):
+        hour, minute, second, day, month, year = (v - 1 for v in value[offset:offset + 6])
+        if not 0 <= year <= 99:
+            continue
+        try:
+            stamp = datetime(2000 + year, month, day, hour, minute, second)
+        except ValueError:
+            continue  # An unset clock is unknown, never a fabricated valid date.
+        result[key] = stamp.replace(tzinfo=timezone.utc) if key == "rtc_time" else stamp.isoformat(sep=" ")
+    return result
 
 
 def serial_id(value):
@@ -14,6 +32,11 @@ def header(opcode, tank, passcode=0, subcode=0, target=None):
     if not 0 <= tank <= 65535 or not 0 <= passcode <= 65535:
         raise ValueError("Invalid tank ID or passcode")
     return bytes([opcode, subcode]) + tank.to_bytes(2, "little") + passcode.to_bytes(2, "little") + (bytes.fromhex(serial_id(target)) if target else bytes(6))
+
+
+def identify_packet(tank, passcode=0):
+    """C1 is connection-local: two 500 ms blinks on channel 5 (white)."""
+    return header(0xC1, tank, passcode) + bytes((2, 4))
 
 
 def temperatures(value):

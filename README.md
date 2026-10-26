@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.1.1. Tested with light firmware 1.4.0.2.
+Experimental version 0.2.0. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -28,7 +28,9 @@ Each light appears as a separate device. Its tank ID is read automatically; mana
 ## Available features
 
 - Two light temperature sensors and a controller temperature sensor.
-- Firmware version, tank ID, and last successful update.
+- Firmware and hardware versions, tank ID, and last successful update.
+- The light's local date/time, hardware clock, and approximate clock offset from Home Assistant.
+- **Identify light** button: briefly blinks the white channel on the selected light (firmware 1.4.0.2).
 - Saved lighting schedule, available in the schedule sensor's attributes.
 - **Refresh schedule** button.
 - **Sync clock** button for firmware 1.4.0.2. This sends the current UTC time; it does not verify the resulting clock reading.
@@ -36,6 +38,8 @@ Each light appears as a separate device. Its tank ID is read automatically; mana
 ## Updates
 
 Lights are polled every **60 seconds** by default. Change this to **30–300 seconds** in the integration's options.
+
+Clock readings are snapshots taken during each poll. Positive clock offset means the hardware clock is ahead of Home Assistant; small offsets include Bluetooth delay and one-second clock resolution.
 
 Schedules refresh every **15 minutes**, or when you press **Refresh schedule**. After editing a schedule in the ATI app, finish the edit before refreshing it in Home Assistant.
 

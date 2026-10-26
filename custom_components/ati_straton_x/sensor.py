@@ -1,6 +1,6 @@
 """Verified telemetry; no schedule estimates presented as channel output."""
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfTemperature, EntityCategory
+from homeassistant.const import UnitOfTemperature, UnitOfTime, EntityCategory
 from .entity import StratonEntity
 
 PARALLEL_UPDATES = 0
@@ -13,6 +13,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         ("controller_temperature", "Controller temperature"), ("tank_id", "Tank group"),
         ("firmware", "Firmware"), ("last_seen", "Last successful poll"),
         ("schedule", "Schedule points"), ("schedule_updated", "Schedule last read"),
+        ("local_time", "Light date and time"), ("rtc_time", "Hardware clock"),
+        ("clock_offset", "Clock offset"), ("hardware", "Hardware version"),
     )])
 
 
@@ -24,10 +26,17 @@ class StratonSensor(StratonEntity, SensorEntity):
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             self._attr_state_class = SensorStateClass.MEASUREMENT
-        elif key in ("last_seen", "schedule_updated"):
+        elif key == "clock_offset":
+            self._attr_native_unit_of_measurement = UnitOfTime.SECONDS
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+            self._attr_icon = "mdi:timer-alert-outline"
+        elif key == "local_time":
+            self._attr_icon = "mdi:clock-outline"
+        elif key in ("last_seen", "schedule_updated", "rtc_time"):
             self._attr_device_class = SensorDeviceClass.TIMESTAMP
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
-        elif key in ("tank_id", "firmware"):
+        elif key in ("tank_id", "firmware", "hardware"):
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
@@ -41,4 +50,12 @@ class StratonSensor(StratonEntity, SensorEntity):
         if self.key == "schedule":
             attrs.update(self.coordinator.data["schedule"])
             attrs["channel_scale"] = "0–1023 (schedule values, not live output)"
+        elif self.key in ("local_time", "rtc_time", "clock_offset"):
+            data = self.coordinator.data
+            attrs["read_at"] = data.get("clock_read_at")
+            attrs["read_duration_seconds"] = data.get("clock_read_duration")
+            if self.key == "local_time":
+                attrs["time_basis"] = "Light's configured local time; snapshot at last poll"
+            elif self.key == "clock_offset":
+                attrs["positive_means"] = "Light hardware clock ahead of Home Assistant (UTC)"
         return attrs

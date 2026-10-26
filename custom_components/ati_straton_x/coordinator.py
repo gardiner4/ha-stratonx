@@ -6,7 +6,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.exceptions import HomeAssistantError
 from .const import DOMAIN, DEFAULT_INTERVAL, SCHEDULE_INTERVAL, MAIN
 from .client import connection, identity, query, read_schedule
-from .protocol import header, temperatures
+from .protocol import header, temperatures, clocks, identify_packet
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +30,20 @@ class StratonCoordinator(DataUpdateCoordinator):
                 passcode = self.entry.options.get("passcode", self.entry.data.get("passcode", 0))
                 data = dict(info)
                 data.update(temperatures(await query(client, header(0xC3, tank, passcode) + bytes(8))))
+                # Clock decode failures must not discard otherwise valid telemetry.
+                clock_start = datetime.now(timezone.utc)
+                clock_packet = await query(client, header(0xC6, tank, passcode) + bytes(8))
+                clock_end = datetime.now(timezone.utc)
+                try:
+                    data.update(clocks(clock_packet))
+                    data["clock_read_at"] = clock_end
+                    data["clock_response"] = clock_packet.hex()
+                    if data["rtc_time"] is not None:
+                        midpoint = clock_start + (clock_end - clock_start) / 2
+                        data["clock_offset"] = round((data["rtc_time"] - midpoint).total_seconds(), 1)
+                    data["clock_read_duration"] = round((clock_end - clock_start).total_seconds(), 2)
+                except ValueError:
+                    data["clock_error"] = "Unsupported clock response"
                 previous = self.data or {}
                 if previous.get("tank_id") == tank:
                     for key in ("schedule", "schedule_updated"):
@@ -51,6 +65,18 @@ class StratonCoordinator(DataUpdateCoordinator):
     async def refresh_schedule(self):
         self.last_schedule = 0
         await self.async_request_refresh()
+
+    async def identify(self):
+        """Blink only the connected fixture; never use the broadcast wrapper."""
+        try:
+            async with connection(self.hass, self.entry.data["address"]) as client:
+                info = await identity(client)
+                if info["serial"] != self.entry.data["serial"] or info["firmware"] != "1.4.0.2":
+                    raise ValueError("Identify requires the verified identity and firmware 1.4.0.2")
+                passcode = self.entry.options.get("passcode", self.entry.data.get("passcode", 0))
+                await client.write_gatt_char(MAIN, identify_packet(info["tank_id"], passcode), response=True)
+        except Exception as exc:
+            raise HomeAssistantError(str(exc)) from exc
 
     async def sync_clock(self):
         # Explicit button only; no automatic writes. Only the tested firmware.

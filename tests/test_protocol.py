@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
+from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("protocol", ROOT / "custom_components/ati_straton_x/protocol.py")
@@ -11,6 +12,35 @@ spec.loader.exec_module(p)
 
 
 class ProtocolTest(unittest.TestCase):
+    def test_identify_is_local_and_bounded(self):
+        self.assertEqual(p.identify_packet(42, 513), bytes.fromhex("c1002a0001020000000000000204"))
+
+    def test_clock_utc_and_local(self):
+        packet = bytes([255, 18, 4, 50, 27, 11, 27, 255, 14, 4, 52, 27, 11, 27, 2, 255])
+        result = p.clocks(packet)
+        self.assertEqual(result["rtc_time"], datetime(2026, 10, 26, 17, 3, 49, tzinfo=timezone.utc))
+        self.assertEqual(result["local_time"], "2026-10-26 13:03:51")
+        self.assertEqual(p.clocks(packet + bytes(184)), result)
+
+    def test_recorded_clock(self):
+        result = p.clocks(bytes.fromhex("ff122b0a1b0b1bff0e2b0a1b0b1b02ff"))
+        self.assertEqual(result["rtc_time"], datetime(2026, 10, 26, 17, 42, 9, tzinfo=timezone.utc))
+        self.assertEqual(result["local_time"], "2026-10-26 13:42:09")
+
+    def test_unset_and_invalid_clocks(self):
+        packet = bytearray([255, 1, 1, 1, 1, 1, 1, 255, 1, 1, 1, 1, 1, 1, 1, 255])
+        self.assertEqual(p.clocks(packet), {"rtc_time": None, "local_time": None})
+        for invalid in (b"", b"empty", bytes(16), bytes(packet[:15]), bytes(packet) + b"\x01"):
+            with self.assertRaises(ValueError):
+                p.clocks(invalid)
+
+    def test_clock_leap_day_and_year_boundary(self):
+        packet = bytearray([255, 24, 60, 60, 30, 3, 25, 255, 1, 1, 1, 2, 2, 26, 1, 255])
+        self.assertEqual(p.clocks(packet)["rtc_time"].day, 29)
+        self.assertEqual(p.clocks(packet)["local_time"], "2025-01-01 00:00:00")
+        packet[6] = 26
+        self.assertIsNone(p.clocks(packet)["rtc_time"])
+
     def test_recorded_schedule(self):
         evidence = json.loads((ROOT / "tests/fixtures/schedule.json").read_text())
         packets = evidence["schedule_packets"]

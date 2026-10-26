@@ -7,7 +7,7 @@ PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    async_add_entities([StratonButton(entry.runtime_data, "refresh", "Refresh schedule"), StratonButton(entry.runtime_data, "sync", "Sync clock (UTC)")])
+    async_add_entities([StratonButton(entry.runtime_data, "refresh", "Refresh schedule"), StratonButton(entry.runtime_data, "sync", "Sync clock (UTC)"), StratonButton(entry.runtime_data, "identify", "Identify light")])
 
 
 class StratonButton(StratonEntity, ButtonEntity):
@@ -16,10 +16,12 @@ class StratonButton(StratonEntity, ButtonEntity):
     def __init__(self, coordinator, key, name):
         super().__init__(coordinator, key, name)
         self.key = key
-        self._attr_icon = "mdi:refresh" if key == "refresh" else "mdi:clock-check-outline"
+        self._attr_icon = {"refresh": "mdi:refresh", "sync": "mdi:clock-check-outline", "identify": "mdi:lightbulb-on-outline"}[key]
 
     async def async_press(self):
         if self.key == "refresh":
             await self.coordinator.refresh_schedule()
+        elif self.key == "identify":
+            await self.coordinator.identify()
         else:
             await self.coordinator.sync_clock()
