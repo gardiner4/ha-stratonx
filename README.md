@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.3.0. Tested with light firmware 1.4.0.2.
+Experimental version 0.3.1. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -31,6 +31,7 @@ Each light appears as a separate device. Its tank ID is read automatically; mana
 - Firmware and hardware versions, tank ID, and last successful update.
 - The light's local date/time, hardware clock, and approximate clock offset from Home Assistant.
 - **Identify light** button: briefly blinks the white channel on the selected light (firmware 1.4.0.2).
+- Six **Estimated channel output** sensors calculated from the saved schedule and light clock.
 - Saved lighting schedule, available in the schedule sensor's attributes.
 - **Refresh schedule** button.
 - **Live mode remaining** sensor for each light (seconds remaining at the last poll).
@@ -84,6 +85,16 @@ Lights are polled every **60 seconds** by default. Change this to **30–300 sec
 Clock readings are snapshots taken during each poll. Positive clock offset means the hardware clock is ahead of Home Assistant; small offsets include Bluetooth delay and one-second clock resolution.
 
 Schedules refresh every **15 minutes**, or when you press **Refresh schedule**. After editing a schedule in the ATI app, finish the edit before refreshing it in Home Assistant.
+
+## Estimated channel output
+
+Each light has six percentage sensors labeled **Estimated**: UV/Violet, Royal blue, Blue, Cyan/Horti white, White, and Red. Values use linear interpolation between saved schedule points and the light's own local-clock snapshot. They update during normal polling, with no additional Bluetooth requests.
+
+These are **schedule estimates, not measured live output**. The daytime plateau matched the ATI app's Main Light values during testing; transitions still need comparison on a physical light. Do not compare these with the app's Total tab, which can show different values.
+
+Estimates become **unknown** when a timed live override is active, its timer state is unknown, the clock is invalid, or the schedule cannot be interpreted. Failed polls make the entities unavailable. Estimates resume after a successful poll confirms the override has ended. Outside the schedule's time range, zero is estimated only if both boundary nodes are zero; other boundary cases remain unknown.
+
+Moonlight, acclimation, and day-length adjustments are **not included or detected**. If you use those features, these sensors can differ from actual output. Sensor attributes include this limitation, the calculation status, the light-clock snapshot, and the schedule's last-read time. Schedule changes in the ATI app appear after **Refresh schedule** or the next scheduled refresh.
 
 ## Current limitations
 

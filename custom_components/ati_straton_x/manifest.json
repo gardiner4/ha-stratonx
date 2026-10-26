@@ -1,14 +1,23 @@
 {
   "domain": "ati_straton_x",
   "name": "ATI Straton X",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "documentation": "https://github.com/gardiner4/ha-stratonx",
   "issue_tracker": "https://github.com/gardiner4/ha-stratonx/issues",
   "config_flow": true,
-  "bluetooth": [{"local_name": "StratonX-*", "connectable": true}],
-  "dependencies": ["bluetooth"],
+  "bluetooth": [
+    {
+      "local_name": "StratonX-*",
+      "connectable": true
+    }
+  ],
+  "dependencies": [
+    "bluetooth"
+  ],
   "iot_class": "local_polling",
   "integration_type": "device",
   "codeowners": [],
-  "requirements": ["bleak-retry-connector==4.7.1"]
+  "requirements": [
+    "bleak-retry-connector==4.7.1"
+  ]
 }

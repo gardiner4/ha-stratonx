@@ -1,7 +1,8 @@
-"""Verified telemetry; no schedule estimates presented as channel output."""
+"""Verified telemetry and explicitly labeled schedule estimates."""
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature, UnitOfTime, EntityCategory
 from .entity import StratonEntity
+from .estimates import CHANNELS, LIMITATIONS, estimate_channels
 
 PARALLEL_UPDATES = 0
 
@@ -17,6 +18,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         ("clock_offset", "Clock offset"), ("hardware", "Hardware version"),
         ("live_remaining", "Live mode remaining"),
     )])
+    async_add_entities([EstimatedChannelSensor(c, index, key, name)
+                        for index, (key, name) in enumerate(CHANNELS)])
 
 
 class StratonSensor(StratonEntity, SensorEntity):
@@ -62,4 +65,36 @@ class StratonSensor(StratonEntity, SensorEntity):
                 attrs["time_basis"] = "Light's configured local time; snapshot at last poll"
             elif self.key == "clock_offset":
                 attrs["positive_means"] = "Light hardware clock ahead of Home Assistant (UTC)"
+        return attrs
+
+
+class EstimatedChannelSensor(StratonEntity, SensorEntity):
+    """A schedule snapshot, not measured PWM or optical output."""
+
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:brightness-percent"
+
+    def __init__(self, coordinator, index, key, name):
+        super().__init__(coordinator, f"estimated_{key}", f"Estimated {name} output")
+        self.index = index
+
+    @property
+    def native_value(self):
+        values, _ = estimate_channels(self.coordinator.data or {})
+        return values[self.index] if values is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        attrs = super().extra_state_attributes
+        data = self.coordinator.data or {}
+        _, reason = estimate_channels(data)
+        attrs.update({
+            "source": "Saved schedule with linear interpolation",
+            "estimate_status": reason,
+            "light_local_time": data.get("local_time"),
+            "read_at": data.get("clock_read_at"),
+            "schedule_last_read": data.get("schedule_updated"),
+            "limitations": LIMITATIONS,
+        })
         return attrs
