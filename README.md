@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.4.0. Tested with light firmware 1.4.0.2.
+Experimental version 0.4.1. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -82,14 +82,14 @@ Save the script and run it directly or add it to a dashboard button. The lights 
 
 The bundled **ATI Straton X Schedule** card displays six colored channel curves across 24 hours, schedule points, and a marker at the light's last reported local time. Drag the time slider to inspect the saved levels at any time; select **Use light time** to return. Tap a channel to hide or show its curve.
 
-The card is read-only. During a live override it keeps the saved schedule visible and hides the current estimate. The slider can still inspect scheduled values, clearly labeled **Schedule at**. Missing clocks or timer states hide current estimates; unavailable lights show a notice. Moonlight, acclimation, and day-length adjustments are not included.
+The Schedule tab is read-only; the Live mode tab provides explicit timed group controls. During a live override it keeps the saved schedule visible and hides the current estimate. The slider can still inspect scheduled values, clearly labeled **Schedule at**. Missing clocks or timer states hide current estimates; unavailable lights show a notice. Moonlight, acclimation, and day-length adjustments are not included.
 
 ### Add the card
 
-1. Update the integration to **0.4.0 or later** and restart Home Assistant.
+1. Update the integration to **0.4.1 or later** and restart Home Assistant.
 2. Enable **Advanced mode** in your Home Assistant profile if Resources is not visible.
 3. Open **Settings > Dashboards > Resources**, and add this URL as a **JavaScript module**:
-   `/ati_straton_x/stratonx-schedule-card.js?v=0.4.0`
+   `/ati_straton_x/stratonx-schedule-card.js?v=0.4.1`
 4. Reload your browser or Companion app, edit a dashboard, and add **ATI Straton X Schedule**.
 5. Enter an ATI **Tank ID** for one card per group, or select a **Schedule points** sensor for a single-light card.
 
@@ -136,3 +136,15 @@ Other firmware versions have not been verified.
 If a light is missing or unavailable, check Bluetooth range and that the adapter or proxy supports active connections. Failed polls retry automatically with increasing delays.
 
 To stop polling, disable the light's integration entry under **Settings > Devices & services**.
+
+
+### Live mode tab
+
+Open **Live mode** on a card configured with a Tank ID. Adjust six channel sliders and a duration of 1–60 minutes, then press **Apply to tank**. Moving sliders and choosing presets only prepares a draft; it does not send commands. The action affects the entire ATI tank group, potentially including lights not configured in Home Assistant.
+
+- **Blue photo** prepares Royal blue and Blue at 100%, with the other channels at zero.
+- **Copy schedule estimate** prepares the selected light's saved schedule levels at its last reported clock time. These are estimates, not live output.
+- **Temporary off** prepares all channels at zero. Press Apply to start the timed blackout.
+- **Resume schedule** ends the override; the lamp's saved program decides its output.
+
+Group timers show snapshots from the last poll. Successful actions confirm timer state, not actual channel output. Drafts stay in the current card while switching tabs but are not saved presets or Home Assistant scenes. The existing group services require supported firmware and available configured members; failures are shown on the card. Single-light cards must be given an explicit Tank ID before group controls are enabled.

@@ -1,4 +1,4 @@
-/* ATI Straton X schedule card 0.4.0 — read-only, no external dependencies. */
+/* ATI Straton X schedule / live card 0.4.1, no external dependencies. */
 export const CHANNELS = [
   ["UV / Violet", "#c43ce3"], ["Royal blue", "#386bff"], ["Blue", "#00a7ef"],
   ["Cyan / Horti white", "#00b8b9"], ["White", "#9ba6b6"], ["Red", "#ef5555"],
@@ -41,6 +41,7 @@ const timeLabel = s => s === null ? "Unknown" : String(Math.floor(s/3600)).padSt
 class StratonXScheduleCard extends HTMLElement {
   constructor() {
     super(); this.attachShadow({mode:"open"}); this.hiddenChannels = new Set();
+    this.tab="schedule"; this.draft=Array(6).fill(0); this.duration=10; this.draftReady=false; this.busy=false; this.feedback="";
   }
   static getStubConfig(hass) {
     return {entity: Object.keys(hass.states).find(k => Array.isArray(hass.states[k].attributes.nodes)) || ""};
@@ -50,9 +51,10 @@ class StratonXScheduleCard extends HTMLElement {
     if (!(typeof config.entity === "string" && config.entity.startsWith("sensor.")) &&
         !(Number.isInteger(config.tank_id) && config.tank_id > 0 && config.tank_id < 65535))
       throw new Error("Select a Schedule points sensor or enter an ATI tank ID.");
+    if (this.config && this.config.tank_id !== config.tank_id) { this.draftReady=false; this.feedback=""; }
     this.config = {...config}; this.selection = null; this.render();
   }
-  set hass(hass) { this._hass = hass; this.render(); }
+  set hass(hass) { this._hass = hass; if (!this.shadowRoot.activeElement?.matches(".live-slider, .duration")) this.render(); }
   getCardSize() { return 8; }
   getGridOptions() { return {columns:12, rows:"auto", min_columns:6}; }
   companions(schedule) {
@@ -64,6 +66,66 @@ class StratonXScheduleCard extends HTMLElement {
       timer: this.config.live_entity ? states[this.config.live_entity] :
         find(s => String(s.attributes.description || "").startsWith("Device override timer snapshot")),
     };
+  }
+
+  async sendLive(resume=false) {
+    if(this.busy || !this.config.tank_id || (!resume && !this.draftReady)) return;
+    const tank=this.config.tank_id;
+    if(!resume && (!Number.isInteger(this.duration)||this.duration<1||this.duration>60 ||
+      !this.draft.every(v=>Number.isFinite(v)&&v>=0&&v<=100))) {
+      this.feedback="Choose valid percentages and a duration of 1–60 minutes."; this.render(); return;
+    }
+    const data={tank_id:tank};
+    if(!resume) {
+      data.duration_minutes=this.duration;
+      ["uv_violet","royal_blue","blue","horti_white","white","red"].forEach((key,i)=>data[key]=this.draft[i]);
+    }
+    this.busy=true; this.feedback="Sending to tank "+tank+"…";this.render();
+    try {
+      await this._hass.callService("ati_straton_x",resume?"resume_tank_schedule":"set_tank_live",data);
+      this.feedback=resume?"Schedule resume confirmed by timers.":"Live timer confirmed. Requested levels sent; actual output is not measured.";
+    } catch(error) {
+      this.feedback="Action failed: "+(error?.message || String(error))+" Check group timers before retrying.";
+    } finally {this.busy=false;this.render();}
+  }
+  livePanel(members) {
+    const tank=this.config.tank_id, disabled=this.busy?" disabled":"";
+    const timers=members.map(s=>{
+      const timer=this.companions(s).timer;
+      const value=good(timer)&&/^\d+$/.test(timer.state)?Number(timer.state):null;
+      return '<li>'+escape(s.attributes.friendly_name?.replace(/ Schedule points$/, "")||s.attributes.serial)+
+        ': '+(value===null?"Unknown":value===0?"Scheduled mode":Math.ceil(value/60)+" min remaining")+'</li>';
+    }).join("");
+    return '<div class="live-panel"><p class="notice">Temporary mix for '+(tank?'all lights in ATI tank '+escape(tank):'a tank group')+'. The saved schedule resumes when the timer ends.</p>'+
+      (!tank?'<p>Set a Tank ID in this card’s configuration to enable group controls.</p>':'')+
+      '<div class="presets"><button data-preset="blue"'+disabled+'>Blue photo</button><button data-preset="schedule"'+disabled+'>Copy schedule estimate</button><button data-preset="off"'+disabled+'>Temporary off</button></div>'+
+      '<p class="foot">Presets fill the sliders; press Apply to send. Blue photo uses Royal blue and Blue at 100%.</p>'+
+      CHANNELS.map(([name,color],i)=>'<label class="live-channel"><span>'+name+'</span><output id="level-'+i+'">'+this.draft[i]+'%</output><input class="live-slider" data-channel="'+i+'" type="range" min="0" max="100" step="1" value="'+this.draft[i]+'" style="accent-color:'+color+'" aria-label="'+name+' requested percentage"'+disabled+'></label>').join("")+
+      '<label class="duration-label">Duration (minutes)<input class="duration" type="number" min="1" max="60" step="1" value="'+this.duration+'"'+disabled+'></label>'+
+      '<div class="actions"><button class="apply"'+(this.busy||!tank||!this.draftReady?' disabled':'')+'>'+(this.busy?'Working…':'Apply to tank')+'</button><button class="resume"'+(this.busy||!tank?' disabled':'')+'>Resume schedule</button></div>'+
+      '<p class="feedback" role="status">'+escape(this.feedback||'Requested levels — not measured output. Sliders do not change lights until Apply.')+'</p>'+
+      '<details open><summary>Group timers · last poll</summary><ul>'+(timers||'<li>No configured group members available</li>')+'</ul></details></div>';
+  }
+  bindLive(members) {
+    this.shadowRoot.querySelectorAll(".live-slider").forEach(input=>{
+      input.oninput=()=>{this.draft[Number(input.dataset.channel)]=Number(input.value);this.draftReady=true;
+        this.shadowRoot.getElementById("level-"+input.dataset.channel).textContent=input.value+"%";
+        this.shadowRoot.querySelector(".apply").disabled=this.busy||!this.config.tank_id;};
+    });
+    this.shadowRoot.querySelector(".duration").oninput=e=>{this.duration=Number(e.target.value);};
+    this.shadowRoot.querySelectorAll("[data-preset]").forEach(button=>button.onclick=()=>{
+      if(button.dataset.preset==="schedule"){
+        const member=members.find(s=>s.entity_id===this.activeEntity)||members[0];
+        const clock=this.companions(member).clock;
+        const time=good(clock)?clockSeconds(clock.state):null;
+        const values=time===null?null:atTime(member?.attributes.nodes,time);
+        if(!good(member)||!values){this.feedback="Schedule estimate unavailable. Refresh schedule and clock first.";this.render();return;}
+        this.draft=values.map(Math.round);
+      } else this.draft=button.dataset.preset==="blue"?[0,100,100,0,0,0]:Array(6).fill(0);
+      this.draftReady=true;this.feedback="Draft prepared. Press Apply to send to the tank.";this.render();
+    });
+    this.shadowRoot.querySelector(".apply").onclick=()=>this.sendLive();
+    this.shadowRoot.querySelector(".resume").onclick=()=>this.sendLive(true);
   }
   render() {
     if (!this.config || !this._hass) return;
@@ -112,6 +174,7 @@ class StratonXScheduleCard extends HTMLElement {
     const cursor = inspected ? '<line class="cursor" x1="'+x(selected)+'" x2="'+x(selected)+'" y1="36" y2="212"/>' : "";
     this.shadowRoot.innerHTML = `<style>
       :host{display:block}ha-card{display:block;overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#fff));color:var(--primary-text-color,#182435);border-radius:var(--ha-card-border-radius,18px)}
+      .tabs{display:flex;gap:8px;margin:14px 0}.tabs button,.presets button,.actions button{border:1px solid var(--divider-color,#dbe1e9);border-radius:9px;padding:10px;background:transparent}.tabs button[aria-selected=true],.apply{background:var(--primary-color,#008db5)!important;color:var(--text-primary-color,#fff)}button:disabled{opacity:.45;cursor:default}.presets,.actions{display:flex;gap:8px;flex-wrap:wrap}.live-channel{display:grid;grid-template-columns:1fr auto;gap:5px;margin:18px 0;font-size:14px}.live-channel input{grid-column:1/-1}.live-channel output{font-weight:700}.duration-label{display:flex;justify-content:space-between;align-items:center;margin:20px 0;font-size:14px}.duration{width:70px;padding:8px;border:1px solid var(--divider-color,#aaa);border-radius:6px;background:transparent;color:inherit}.feedback,details{font-size:12px;line-height:1.6}.feedback{min-height:38px}
       .wrap{padding:20px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h2{margin:4px 0;font-size:20px;font-weight:650}.eyebrow{font-size:10px;font-weight:700;letter-spacing:1.8px;color:var(--secondary-text-color,#66768b)}
       .pill{padding:6px 10px;border:1px solid var(--divider-color,#dbe1e9);border-radius:20px;font-size:11px;white-space:nowrap}
       .group-info{font-size:12px;margin-top:12px;color:var(--secondary-text-color,#66768b)}.group-info label{display:block;margin-top:8px}.member{max-width:100%;padding:5px;color:inherit;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dbe1e9);border-radius:5px}.notice{font-size:12px;line-height:1.6;color:var(--secondary-text-color,#66768b);min-height:38px;margin:12px 0 4px}
@@ -127,7 +190,9 @@ class StratonXScheduleCard extends HTMLElement {
       button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#008db5);outline-offset:2px}
       @media(max-width:380px){.wrap{padding:14px}.channel{padding:10px 7px;gap:6px}.name{font-size:11px}}
       </style><ha-card><div class="wrap">
-      <header><div><div class="eyebrow">LIGHT SCHEDULE</div><h2>${escape(title)}</h2></div><span class="pill">24 HOURS</span></header>
+      <header><div><div class="eyebrow">${this.tab==="live"?"LIVE MODE":"LIGHT SCHEDULE"}</div><h2>${escape(title)}</h2></div><span class="pill">${this.tab==="live"?"TIMED OVERRIDE":"24 HOURS"}</span></header>
+      <div class="tabs"><button data-tab="schedule" aria-selected="${this.tab==="schedule"}">Schedule</button><button data-tab="live" aria-selected="${this.tab==="live"}">Live mode</button></div>
+      ${this.tab==="live" ? this.livePanel(members) : `
       ${this.config.tank_id ? `<div class="group-info">${members.length} configured lights · ${matching ? "saved schedules match" : "schedules differ or are unavailable"}<label>Schedule / clock shown: <select class="member">${members.map(s=>`<option value="${escape(s.entity_id)}" ${s===schedule?"selected":""}>${escape(s.attributes.friendly_name?.replace(/ Schedule points$/, "") || s.attributes.serial)}</option>`).join("")}</select></label></div>` : ""}
       <div class="notice" role="status">${escape(notice)}</div>
       <svg viewBox="0 0 640 250" role="img" aria-label="Saved lighting schedule, six channel percentages over 24 hours">
@@ -137,7 +202,10 @@ class StratonXScheduleCard extends HTMLElement {
       <input type="range" min="0" max="1440" step="1" value="${Math.floor((selected ?? 43200)/60)}" aria-label="Inspect saved schedule time" ${valid?"":"disabled"}>
       <div class="channels">${CHANNELS.map(([name,color],i)=>`<button class="channel" type="button" data-index="${i}" aria-pressed="${!this.hiddenChannels.has(i)}" aria-label="Toggle ${name} curve"><span class="swatch" style="background:${color}"></span><span class="name">${name}</span><span class="value">${values ? values[i].toFixed(1)+"%" : "—"}</span></button>`).join("")}</div>
       <p class="foot">Saved schedule · not live output. Tap a channel to hide its curve. Moonlight, acclimation and day-length adjustments are not included.</p>
+      `}
       </div></ha-card>`;
+    this.shadowRoot.querySelectorAll("[data-tab]").forEach(button=>button.onclick=()=>{this.tab=button.dataset.tab;this.render();});
+    if(this.tab==="live"){this.bindLive(members);return;}
     const picker = this.shadowRoot.querySelector(".member");
     if (picker) picker.onchange = event => {this.activeEntity=event.target.value;this.selection=null;this.render();};
     this.shadowRoot.querySelector(".reset").onclick = () => {this.selection=null;this.render();};
