@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.3.1. Tested with light firmware 1.4.0.2.
+Experimental version 0.4.0. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -77,6 +77,33 @@ sequence:
 ```
 
 Save the script and run it directly or add it to a dashboard button. The lights handle the timer, so the script needs no delay or restore step. Use **Resume tank schedule** with the same tank ID to finish early. This changes temporary lighting only; it does not edit the saved schedule.
+
+## Schedule dashboard card
+
+The bundled **ATI Straton X Schedule** card displays six colored channel curves across 24 hours, schedule points, and a marker at the light's last reported local time. Drag the time slider to inspect the saved levels at any time; select **Use light time** to return. Tap a channel to hide or show its curve.
+
+The card is read-only. During a live override it keeps the saved schedule visible and hides the current estimate. The slider can still inspect scheduled values, clearly labeled **Schedule at**. Missing clocks or timer states hide current estimates; unavailable lights show a notice. Moonlight, acclimation, and day-length adjustments are not included.
+
+### Add the card
+
+1. Update the integration to **0.4.0 or later** and restart Home Assistant.
+2. Enable **Advanced mode** in your Home Assistant profile if Resources is not visible.
+3. Open **Settings > Dashboards > Resources**, and add this URL as a **JavaScript module**:
+   `/ati_straton_x/stratonx-schedule-card.js?v=0.4.0`
+4. Reload your browser or Companion app, edit a dashboard, and add **ATI Straton X Schedule**.
+5. Select the light's **Schedule points** sensor. Add one card per light.
+
+The card finds that fixture's clock and live timer by serial number, so renaming a light does not affect discovery. You can optionally select explicit clock and timer entity IDs in the editor.
+
+Manual card configuration:
+
+```yaml
+type: custom:stratonx-schedule-card
+entity: sensor.your_light_schedule_points
+title: Aquarium lighting
+```
+
+Replace the example entity with your own schedule sensor. Optional configuration keys are `time_entity` and `live_entity`. The integration serves the JavaScript; there is no separate card repository or external chart library. Register the resource once. When updating the card, update its URL's version suffix and reload the frontend.
 
 ## Updates
 
