@@ -2,6 +2,7 @@
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature, UnitOfTime, EntityCategory
 from .entity import StratonEntity
+from .bluetooth_sensor import AdvertisementSensor
 from .estimates import CHANNELS, LIMITATIONS, estimate_channels
 
 PARALLEL_UPDATES = 0
@@ -17,6 +18,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
         ("local_time", "Light date and time"), ("rtc_time", "Hardware clock"),
         ("clock_offset", "Clock offset"), ("hardware", "Hardware version"),
         ("live_remaining", "Live mode remaining"),
+    )])
+    async_add_entities([AdvertisementSensor(c, key, name) for key, name in (
+        ("bluetooth_signal", "Bluetooth signal"),
+        ("bluetooth_source", "Bluetooth reporting proxy"),
+        ("bluetooth_last_seen", "Last Bluetooth advertisement"),
     )])
     async_add_entities([EstimatedChannelSensor(c, index, key, name)
                         for index, (key, name) in enumerate(CHANNELS)])
@@ -44,15 +50,26 @@ class StratonSensor(StratonEntity, SensorEntity):
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
+    def available(self):
+        if self.key == "last_seen":
+            return bool((self.coordinator.data or {}).get("last_seen"))
+        return super().available
+
+    @property
     def native_value(self):
-        data = self.coordinator.data
-        return len(data["schedule"]["nodes"]) if self.key == "schedule" else data.get(self.key)
+        data = self.coordinator.data or {}
+        if self.key == "schedule":
+            schedule = data.get("schedule")
+            return len(schedule["nodes"]) if schedule else None
+        return data.get(self.key)
 
     @property
     def extra_state_attributes(self):
         attrs = super().extra_state_attributes
         if self.key == "schedule":
-            attrs.update(self.coordinator.data["schedule"])
+            attrs.update(self.coordinator.data.get("schedule") or {})
+            attrs["refresh_policy"] = "Startup or manual; refresh after edits in the ATI app"
+            attrs["last_refresh_error"] = self.coordinator.data.get("schedule_error")
             attrs["channel_scale"] = "0–1023 (schedule values, not live output)"
         elif self.key == "live_remaining":
             attrs["read_at"] = self.coordinator.data.get("live_read_at")

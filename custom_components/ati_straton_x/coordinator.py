@@ -1,10 +1,9 @@
-"""Serialized polling with slower schedule refresh and failure backoff."""
+"""Serialized telemetry polling with startup/manual schedule reads."""
 from datetime import datetime, timedelta, timezone
 import logging
-from time import monotonic
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.exceptions import HomeAssistantError
-from .const import DOMAIN, DEFAULT_INTERVAL, SCHEDULE_INTERVAL, MAIN
+from .const import DOMAIN, DEFAULT_INTERVAL, MAIN
 from .client import connection, identity, query, read_schedule
 from .protocol import header, temperatures, clocks, identify_packet, live_remaining
 from .live import apply_live
@@ -16,7 +15,7 @@ class StratonCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, entry):
         self.entry = entry
         self.interval = entry.options.get("poll_interval", DEFAULT_INTERVAL)
-        self.last_schedule = 0
+        self.schedule_requested = True
         self.failures = 0
         super().__init__(hass, _LOGGER, name=f"Straton {entry.data['serial']}", config_entry=entry, update_interval=timedelta(seconds=self.interval))
 
@@ -55,13 +54,23 @@ class StratonCoordinator(DataUpdateCoordinator):
                     data["clock_error"] = "Unsupported clock response"
                 previous = self.data or {}
                 if previous.get("tank_id") == tank:
-                    for key in ("schedule", "schedule_updated"):
+                    for key in ("schedule", "schedule_updated", "schedule_error"):
                         if key in previous:
                             data[key] = previous[key]
-                if "schedule" not in data or monotonic() - self.last_schedule >= SCHEDULE_INTERVAL:
-                    data["schedule"] = await read_schedule(client, tank, passcode)
-                    data["schedule_updated"] = datetime.now(timezone.utc)
-                    self.last_schedule = monotonic()
+                # New group invalidates the old group's cached schedule.
+                if previous.get("tank_id") is not None and previous.get("tank_id") != tank:
+                    self.schedule_requested = True
+                if self.schedule_requested:
+                    self.schedule_requested = False
+                    try:
+                        data["schedule"] = await read_schedule(client, tank, passcode)
+                        data["schedule_updated"] = datetime.now(timezone.utc)
+                        data.pop("schedule_error", None)
+                    except Exception as exc:
+                        # A schedule failure must not discard good telemetry or
+                        # trigger another large download on every normal poll.
+                        data["schedule_error"] = str(exc)
+                        _LOGGER.warning("Schedule read failed for %s: %s", info["serial"], exc)
                 data["last_seen"] = datetime.now(timezone.utc)
                 self.failures = 0
                 self.update_interval = timedelta(seconds=self.interval)
@@ -72,8 +81,12 @@ class StratonCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(str(exc)) from exc
 
     async def refresh_schedule(self):
-        self.last_schedule = 0
+        self.schedule_requested = True
         await self.async_request_refresh()
+        if not self.last_update_success:
+            raise HomeAssistantError("Schedule refresh failed: light could not be read")
+        if (self.data or {}).get("schedule_error"):
+            raise HomeAssistantError("Schedule refresh failed: " + self.data["schedule_error"])
 
     async def set_tank_live(self, tank, seconds, channels=None):
         """Explicit group action. A2/B2 can affect undiscovered members too."""

@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.5.0. Tested with light firmware 1.4.0.2.
+Experimental version 0.5.1. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -113,7 +113,7 @@ Lights are polled every **60 seconds** by default. Change this to **30–300 sec
 
 Clock readings are snapshots taken during each poll. Positive clock offset means the hardware clock is ahead of Home Assistant; small offsets include Bluetooth delay and one-second clock resolution.
 
-Schedules refresh every **15 minutes**, or when you press **Refresh schedule**. After editing a schedule in the ATI app, finish the edit before refreshing it in Home Assistant.
+Schedules are read once at integration startup/reload, then only when you press **Refresh schedule**. A detected tank-group change also discards and reloads the cached schedule. After editing in the ATI app, finish the edit and press **Refresh schedule**; the graph and estimates otherwise keep using the cached program. If a schedule download fails, successful telemetry and the previous schedule are retained, and the schedule sensor records the error. Retry with the button; regular polls do not repeatedly retry the large download.
 
 ## Estimated channel output
 
@@ -228,3 +228,16 @@ Expose the resulting script through your existing Home Assistant Alexa connectio
 - `ati_straton_x.delete_preset`: Tank ID and name; removes the published copy without changing lights or the card. Removing/renaming a preset in the card does not delete the published copy; use this action for cleanup.
 
 Published presets are included in Home Assistant configuration backups. Card presets and published presets are separate until you press Publish; editing a preset never silently changes an automation's behavior.
+
+
+## Bluetooth diagnostics (0.5.1)
+
+Each light has three diagnostic sensors:
+
+- **Bluetooth signal**: advertisement RSSI in dBm (closer to zero is stronger).
+- **Bluetooth reporting proxy**: name of the receiving adapter/proxy when Home Assistant can resolve it, otherwise its source identifier. The raw source is also an attribute.
+- **Last Bluetooth advertisement**: timestamp of the last advertisement known to Home Assistant.
+
+These use the shared connectable-scanner advertisement cache, checked every 30 seconds, and never open extra Bluetooth connections. Signal and source become unavailable after 180 seconds without a fresh advertisement. Last advertisement and last successful telemetry poll remain visible during an outage. Advertisement timestamps are refreshed while HA is running, not restored across restarts.
+
+RSSI is not the proxy's Wi-Fi signal or a measurement of an active GATT connection. A light can advertise strongly yet reject a connection. Compare the source and timestamp when troubleshooting; switching receivers can change RSSI.
