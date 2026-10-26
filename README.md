@@ -52,6 +52,31 @@ These actions affect the **entire ATI tank group**, including group members not 
 
 The integration contacts each configured group member and verifies its timer; a single firmware broadcast can miss lights. Add every light to Home Assistant and keep its integration enabled. Timer readback does not confirm actual channel output or delivery to undiscovered members. If any member fails verification, the action reports an error and attempts to resume the schedule on the configured group; the device timer is the fallback for unreachable lights.
 
+### Example: Blue Photo script
+
+Create a new script under **Settings > Automations & scenes > Scripts**, open **Edit in YAML**, and paste the example below. Replace `12345` with your light's **Tank group** value before running it.
+
+This example requests **Royal Blue at 100% and Blue at 100%**, with the other four channels at zero, for **10 minutes**. Adjust the levels and duration for your tank.
+
+```yaml
+alias: Blue Photo
+description: Royal Blue and Blue for 10 minutes, then resume the saved schedule.
+mode: single
+sequence:
+  - action: ati_straton_x.set_tank_live
+    data:
+      tank_id: 12345 # Replace with your ATI tank ID.
+      duration_minutes: 10
+      uv_violet: 0
+      royal_blue: 100
+      blue: 100
+      horti_white: 0
+      white: 0
+      red: 0
+```
+
+Save the script and run it directly or add it to a dashboard button. The lights handle the timer, so the script needs no delay or restore step. Use **Resume tank schedule** with the same tank ID to finish early. This changes temporary lighting only; it does not edit the saved schedule.
+
 ## Updates
 
 Lights are polled every **60 seconds** by default. Change this to **30–300 seconds** in the integration's options.
