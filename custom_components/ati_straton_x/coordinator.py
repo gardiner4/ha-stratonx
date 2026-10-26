@@ -6,7 +6,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.exceptions import HomeAssistantError
 from .const import DOMAIN, DEFAULT_INTERVAL, SCHEDULE_INTERVAL, MAIN
 from .client import connection, identity, query, read_schedule
-from .protocol import header, temperatures, clocks, identify_packet
+from .protocol import header, temperatures, clocks, identify_packet, live_remaining
+from .live import apply_live
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +31,14 @@ class StratonCoordinator(DataUpdateCoordinator):
                 passcode = self.entry.options.get("passcode", self.entry.data.get("passcode", 0))
                 data = dict(info)
                 data.update(temperatures(await query(client, header(0xC3, tank, passcode) + bytes(8))))
+                if info["firmware"] == "1.4.0.2":
+                    timer_packet = await query(client, header(0xC2, tank, passcode, 0xB2))
+                    try:
+                        data["live_remaining"] = live_remaining(timer_packet)
+                        data["live_read_at"] = datetime.now(timezone.utc)
+                    except ValueError:
+                        data["live_timer_error"] = "Unsupported live timer response"
+                        data["live_timer_response"] = timer_packet.hex()
                 # Clock decode failures must not discard otherwise valid telemetry.
                 clock_start = datetime.now(timezone.utc)
                 clock_packet = await query(client, header(0xC6, tank, passcode) + bytes(8))
@@ -65,6 +74,21 @@ class StratonCoordinator(DataUpdateCoordinator):
     async def refresh_schedule(self):
         self.last_schedule = 0
         await self.async_request_refresh()
+
+    async def set_tank_live(self, tank, seconds, channels=None):
+        """Explicit group action. A2/B2 can affect undiscovered members too."""
+        try:
+            async with connection(self.hass, self.entry.data["address"]) as client:
+                info = await identity(client)
+                if info["serial"] != self.entry.data["serial"] or info["firmware"] != "1.4.0.2" or info["tank_id"] != tank:
+                    raise ValueError("Light identity, firmware, or tank group changed; refresh first")
+                passcode = self.entry.options.get("passcode", self.entry.data.get("passcode", 0))
+                await apply_live(
+                    lambda packet: client.write_gatt_char(MAIN, packet, response=True),
+                    lambda packet: query(client, packet), tank, passcode, seconds, channels,
+                )
+        except Exception as exc:
+            raise HomeAssistantError(f"Tank live action failed; some members may have received it. The device timer is the fallback: {exc}") from exc
 
     async def identify(self):
         """Blink only the connected fixture; never use the broadcast wrapper."""

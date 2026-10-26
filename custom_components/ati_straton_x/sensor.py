@@ -15,6 +15,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         ("schedule", "Schedule points"), ("schedule_updated", "Schedule last read"),
         ("local_time", "Light date and time"), ("rtc_time", "Hardware clock"),
         ("clock_offset", "Clock offset"), ("hardware", "Hardware version"),
+        ("live_remaining", "Live mode remaining"),
     )])
 
 
@@ -26,7 +27,7 @@ class StratonSensor(StratonEntity, SensorEntity):
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             self._attr_state_class = SensorStateClass.MEASUREMENT
-        elif key == "clock_offset":
+        elif key in ("clock_offset", "live_remaining"):
             self._attr_native_unit_of_measurement = UnitOfTime.SECONDS
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -50,6 +51,9 @@ class StratonSensor(StratonEntity, SensorEntity):
         if self.key == "schedule":
             attrs.update(self.coordinator.data["schedule"])
             attrs["channel_scale"] = "0–1023 (schedule values, not live output)"
+        elif self.key == "live_remaining":
+            attrs["read_at"] = self.coordinator.data.get("live_read_at")
+            attrs["description"] = "Device override timer snapshot; zero means no timed override, not light off"
         elif self.key in ("local_time", "rtc_time", "clock_offset"):
             data = self.coordinator.data
             attrs["read_at"] = data.get("clock_read_at")

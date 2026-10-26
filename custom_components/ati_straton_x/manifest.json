@@ -1,7 +1,7 @@
 {
   "domain": "ati_straton_x",
   "name": "ATI Straton X",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "documentation": "https://github.com/gardiner4/ha-stratonx",
   "issue_tracker": "https://github.com/gardiner4/ha-stratonx/issues",
   "config_flow": true,

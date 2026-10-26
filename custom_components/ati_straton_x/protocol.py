@@ -39,6 +39,34 @@ def identify_packet(tank, passcode=0):
     return header(0xC1, tank, passcode) + bytes((2, 4))
 
 
+def live_remaining(value):
+    """C2/B2 returns ASCII seconds, optionally NUL padded."""
+    text, _, padding = bytes(value).partition(b"\x00")
+    if any(padding) or not re.fullmatch(rb"[0-9]{1,5}", text):
+        raise ValueError("Unexpected live timer response")
+    seconds = int(text)
+    if seconds > 65535:
+        raise ValueError("Live timer out of range")
+    return seconds
+
+
+def live_timer_packet(tank, seconds, passcode=0):
+    """Tank broadcast; zero resumes the saved schedule. No wildcard tanks."""
+    if type(tank) is not int or not 1 <= tank <= 65534:
+        raise ValueError("Live control requires an explicit tank group")
+    if type(seconds) is not int or not 0 <= seconds <= 3600:
+        raise ValueError("Live duration must be 0–3600 seconds")
+    return header(0xB2, tank, passcode) + seconds.to_bytes(2, "big")
+
+
+def live_channels_packet(tank, values, passcode=0):
+    """Six manual PWM targets, not measured output; temporary group broadcast."""
+    live_timer_packet(tank, 0, passcode)
+    if not isinstance(values, (list, tuple)) or len(values) != 6 or any(type(v) is not int or not 0 <= v <= 1023 for v in values):
+        raise ValueError("Exactly six integer channel targets in 0–1023 are required")
+    return header(0xA2, tank, passcode) + b"".join(v.to_bytes(2, "big") for v in values)
+
+
 def temperatures(value):
     if len(value) != 4 or value[0] != 255:
         raise ValueError("Unexpected temperature response")

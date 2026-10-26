@@ -1,0 +1,94 @@
+set_tank_live:
+  name: Set tank live mode
+  description: Temporarily set six channels for the entire ATI tank group, including lights not added to Home Assistant. The lights resume their saved schedule when the timer expires. All channels at zero means temporary off. Experimental; timer readback does not confirm actual channel output.
+  fields:
+    tank_id:
+      name: Tank ID
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 65534
+          mode: box
+    duration_minutes:
+      name: Duration
+      required: true
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+          mode: box
+    uv_violet:
+      name: UV / Violet
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+          mode: slider
+    royal_blue:
+      name: Royal blue
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+          mode: slider
+    blue:
+      name: Blue
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+          mode: slider
+    horti_white:
+      name: Horti white
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+          mode: slider
+    white:
+      name: White
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+          mode: slider
+    red:
+      name: Red
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+          mode: slider
+resume_tank_schedule:
+  name: Resume tank schedule
+  description: End the timed live override for the entire ATI tank group and resume each light's saved schedule. This does not force the lights on if their schedule calls for darkness.
+  fields:
+    tank_id:
+      name: Tank ID
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 65534
+          mode: box

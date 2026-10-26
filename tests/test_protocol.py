@@ -12,6 +12,27 @@ spec.loader.exec_module(p)
 
 
 class ProtocolTest(unittest.TestCase):
+    def test_live_packets(self):
+        self.assertEqual(p.live_timer_packet(42, 600, 513).hex(), "b2002a0001020000000000000258")
+        self.assertEqual(p.live_timer_packet(42, 0)[12:], b"\x00\x00")
+        self.assertEqual(p.live_channels_packet(42, [0, 1, 255, 256, 512, 1023])[12:].hex(), "0000000100ff0100020003ff")
+        for tank in (0, 65535, -1, True):
+            with self.assertRaises(ValueError):
+                p.live_timer_packet(tank, 10)
+        for seconds in (-1, 3601, True, 2.5):
+            with self.assertRaises(ValueError):
+                p.live_timer_packet(42, seconds)
+        for values in ([0]*5, [1024]*6, [-1]*6, [True]*6):
+            with self.assertRaises(ValueError):
+                p.live_channels_packet(42, values)
+
+    def test_live_timer_parser(self):
+        for raw, value in ((b"0", 0), (b"599\x00\x00", 599), (b"65535", 65535)):
+            self.assertEqual(p.live_remaining(raw), value)
+        for raw in (b"", b"empty", b"-1", b"65536", b"1.5", b"1\x00x", b"1\n"):
+            with self.assertRaises(ValueError):
+                p.live_remaining(raw)
+
     def test_identify_is_local_and_bounded(self):
         self.assertEqual(p.identify_packet(42, 513), bytes.fromhex("c1002a0001020000000000000204"))
 
