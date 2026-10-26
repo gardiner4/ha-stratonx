@@ -108,7 +108,7 @@ const assert = require("node:assert/strict");
   await page.locator('[data-tab="live"]').click();
   assert.equal(await page.locator(".live-slider").count(),6);
   assert.equal(await page.locator(".apply").isDisabled(),true);
-  await page.locator('[data-preset="blue"]').click();
+  await page.locator('[data-named="0"]').click();
   assert.deepEqual(await page.evaluate(()=>card.draft),[0,100,100,0,0,0]);
   assert.equal(await page.evaluate(()=>calls.length),0);
   await page.locator(".live-slider").nth(0).fill("15");
@@ -142,6 +142,59 @@ const assert = require("node:assert/strict");
   await page.evaluate(()=>card.setConfig({entity:"sensor.renamed_schedule"}));
   assert.equal(await page.locator(".apply").isDisabled(),true);
   assert.equal(await page.locator(".resume").isDisabled(),true);
+
+  // Presets are dashboard configuration, not browser-only storage.
+  await page.evaluate(()=>{
+    window.presetEditor=document.querySelector("stratonx-schedule-card-editor");
+    presetEditor.setConfig({type:"custom:stratonx-schedule-card",tank_id:42});
+  });
+  const editor=page.locator("stratonx-schedule-card-editor");
+  await editor.locator('[data-field="name"]').fill("Photo");
+  await editor.locator('[data-field="name"]').dispatchEvent("change");
+  await editor.locator('[data-field="duration_minutes"]').fill("7");
+  await editor.locator('[data-field="duration_minutes"]').dispatchEvent("change");
+  await editor.locator('[data-field="channel1"]').fill("80");
+  await editor.locator('[data-field="channel1"]').dispatchEvent("change");
+  await editor.locator(".add-preset").click();
+  await editor.locator('[data-field="name"]').nth(1).fill("Maintenance");
+  await editor.locator('[data-field="name"]').nth(1).dispatchEvent("change");
+  await editor.locator('[data-field="duration_minutes"]').nth(1).fill("30");
+  await editor.locator('[data-field="duration_minutes"]').nth(1).dispatchEvent("change");
+  assert.deepEqual(await page.evaluate(()=>edited.presets),[
+    {name:"Photo",duration_minutes:7,channels:[0,80,100,0,0,0]},
+    {name:"Maintenance",duration_minutes:30,channels:[0,0,0,0,0,0]}
+  ]);
+  await page.evaluate(()=>{
+    card.remove();
+    window.card=document.createElement("stratonx-schedule-card");
+    card.setConfig(JSON.parse(JSON.stringify(edited)));card.hass={states,callService:async()=>{calls.push("unexpected");}};
+    document.body.prepend(card);
+  });
+  await page.locator('[data-tab="live"]').click();
+  await page.locator('[data-named="0"]').click();
+  assert.equal(await page.locator(".duration").inputValue(),"7");
+  assert.equal(await page.locator(".live-slider").nth(1).inputValue(),"80");
+  await page.locator('[data-named="1"]').click();
+  assert.equal(await page.locator(".duration").inputValue(),"30");
+  assert.equal(await page.evaluate(()=>calls.includes("unexpected")),false);
+  const checks=await page.evaluate(()=>({
+    duplicate:api.validPresets([{name:"Photo",duration_minutes:1,channels:[0,0,0,0,0,0]},{name:" photo ",duration_minutes:1,channels:[0,0,0,0,0,0]}]),
+    invalid:api.validPresets([{name:"X",duration_minutes:0,channels:[0,0,0,0,0,0]}]),
+    empty:api.validPresets([]),
+    defaultUnchanged:api.DEFAULT_PRESETS[0].channels[1]
+  }));
+  assert.deepEqual(checks,{duplicate:false,invalid:false,empty:true,defaultUnchanged:100});
+  await editor.locator(".remove-preset").nth(1).click();
+  assert.equal(await page.evaluate(()=>edited.presets.length),1);
+  await editor.locator(".remove-preset").click();
+  assert.deepEqual(await page.evaluate(()=>edited.presets),[]);
+  await page.evaluate(()=>card.setConfig({tank_id:99,presets:[]}));
+  assert.equal(await page.locator("[data-named]").count(),0);
+  await page.evaluate(()=>card.setConfig({tank_id:42,presets:[{name:'<img src=x>',duration_minutes:5,channels:[0,0,0,0,0,0]}]}));
+  assert.equal(await page.locator("img").count(),0);
+  await page.evaluate(()=>card.setConfig({tank_id:42,presets:[{name:"Photo",duration_minutes:10,channels:[0,100,100,0,0,0]},{name:"Maintenance",duration_minutes:30,channels:[0,20,20,20,20,0]}]}));
+  await page.locator('[data-named="0"]').click();
+  await page.screenshot({path:path.join(root,"card-named-presets.png"),fullPage:true});
   assert.deepEqual(errors,[]);
   console.log("PASS: rendering, six curves, interpolation, time inspection, toggles, override/unknown/unavailable states, renamed sensors, escaping and editor. Screenshots saved.");
  } finally { await browser.close(); }

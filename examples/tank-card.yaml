@@ -1,0 +1,12 @@
+# One card per ATI tank. Replace 12345 with the actual Tank ID.
+# Channel order: UV/Violet, Royal blue, Blue, Cyan/Horti white, White, Red.
+type: custom:stratonx-schedule-card
+title: Aquarium lighting
+tank_id: 12345
+presets:
+  - name: Photo
+    duration_minutes: 10
+    channels: [0, 100, 100, 0, 0, 0]
+  - name: Maintenance
+    duration_minutes: 30
+    channels: [0, 20, 20, 20, 20, 0]

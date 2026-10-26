@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.4.1. Tested with light firmware 1.4.0.2.
+Experimental version 0.4.2. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -86,10 +86,10 @@ The Schedule tab is read-only; the Live mode tab provides explicit timed group c
 
 ### Add the card
 
-1. Update the integration to **0.4.1 or later** and restart Home Assistant.
+1. Update the integration to **0.4.2 or later** and restart Home Assistant.
 2. Enable **Advanced mode** in your Home Assistant profile if Resources is not visible.
 3. Open **Settings > Dashboards > Resources**, and add this URL as a **JavaScript module**:
-   `/ati_straton_x/stratonx-schedule-card.js?v=0.4.1`
+   `/ati_straton_x/stratonx-schedule-card.js?v=0.4.2`
 4. Reload your browser or Companion app, edit a dashboard, and add **ATI Straton X Schedule**.
 5. Enter an ATI **Tank ID** for one card per group, or select a **Schedule points** sensor for a single-light card.
 
@@ -147,4 +147,49 @@ Open **Live mode** on a card configured with a Tank ID. Adjust six channel slide
 - **Temporary off** prepares all channels at zero. Press Apply to start the timed blackout.
 - **Resume schedule** ends the override; the lamp's saved program decides its output.
 
-Group timers show snapshots from the last poll. Successful actions confirm timer state, not actual channel output. Drafts stay in the current card while switching tabs but are not saved presets or Home Assistant scenes. The existing group services require supported firmware and available configured members; failures are shown on the card. Single-light cards must be given an explicit Tank ID before group controls are enabled.
+Group timers show snapshots from the last poll. Successful actions confirm timer state, not actual channel output. Slider drafts stay in the current card while switching tabs. Named presets are saved separately in the card configuration; they are not Home Assistant scenes. The existing group services require supported firmware and available configured members; failures are shown on the card. Single-light cards must be given an explicit Tank ID before group controls are enabled.
+
+## Named live presets
+
+Presets are saved in each dashboard card's configuration and shared across your Home Assistant browsers and phones. They do not modify the light's saved schedule.
+
+### Create or edit a preset
+
+1. Open the dashboard's **Edit dashboard** mode, then edit the **ATI Straton X Schedule** card.
+2. Under **Named live presets**, edit **Blue photo**, or choose **Add preset**.
+3. Enter a unique name, a duration of 1–60 minutes, and six channel percentages from 0–100.
+4. Save the card and finish editing the dashboard.
+5. Open **Live mode**, select the named preset, and press **Apply to tank**.
+
+Selecting a preset loads its values without sending a command. You can adjust the loaded sliders for a one-time change; edit the card to permanently change a preset. **Delete preset** removes it from the card after you save. **Resume schedule** ends the override early.
+
+Presets belong to the card, not the fixture firmware or a global preset library. Separate cards can have different presets, even for the same tank. An omitted `presets` option supplies the default Blue photo preset; `presets: []` removes all named presets. Up to 20 presets are supported. These are not native Home Assistant scenes; use the documented script/service example for automations or voice control.
+
+### Example card: Photo and Maintenance
+
+Register this JavaScript module in **Settings → Dashboards → Resources** after installing the integration:
+
+```text
+/ati_straton_x/stratonx-schedule-card.js?v=0.4.2
+```
+
+Then add a manual card with the following YAML. Replace `12345` with your ATI tank ID (shown in the integration's entity attributes). The Maintenance values below are an example mix; adjust them for your aquarium.
+
+```yaml
+type: custom:stratonx-schedule-card
+title: Aquarium lighting
+tank_id: 12345
+presets:
+  - name: Photo
+    duration_minutes: 10
+    channels: [0, 100, 100, 0, 0, 0]
+  - name: Maintenance
+    duration_minutes: 30
+    channels: [0, 20, 20, 20, 20, 0]
+```
+
+Channel order is **UV / Violet, Royal blue, Blue, Cyan / Horti white, White, Red**. All six percentages are required. Each preset name must be unique within the card.
+
+For a second tank, add another card with its own Tank ID and presets. Group commands affect all lights in the ATI tank group, potentially including lights not configured in Home Assistant. Supported firmware and group availability requirements still apply.
+
+The card is bundled at [custom_components/ati_straton_x/www/stratonx-schedule-card.js](custom_components/ati_straton_x/www/stratonx-schedule-card.js); there is no separate frontend repository to install.

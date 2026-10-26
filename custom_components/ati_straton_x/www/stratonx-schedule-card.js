@@ -1,8 +1,23 @@
-/* ATI Straton X schedule / live card 0.4.1, no external dependencies. */
+/* ATI Straton X schedule / live card 0.4.2, no external dependencies. */
 export const CHANNELS = [
   ["UV / Violet", "#c43ce3"], ["Royal blue", "#386bff"], ["Blue", "#00a7ef"],
   ["Cyan / Horti white", "#00b8b9"], ["White", "#9ba6b6"], ["Red", "#ef5555"],
 ];
+
+export const DEFAULT_PRESETS = [{name:"Blue photo", duration_minutes:10, channels:[0,100,100,0,0,0]}];
+export function validPresets(presets) {
+  if(!Array.isArray(presets)||presets.length>20)return false;
+  const names=new Set();
+  return presets.every(p=>{
+    if(!p || typeof p.name!=="string" || !p.name.trim() || p.name.length>60 ||
+      names.has(p.name.trim().toLowerCase()) || !Number.isInteger(p.duration_minutes) ||
+      p.duration_minutes<1 || p.duration_minutes>60 || !Array.isArray(p.channels) ||
+      p.channels.length!==6 || !p.channels.every(v=>Number.isFinite(v)&&v>=0&&v<=100))return false;
+    names.add(p.name.trim().toLowerCase());return true;
+  });
+}
+const presetsFor = config => config.presets ?? DEFAULT_PRESETS;
+
 const escape = value => String(value ?? "").replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const good = s => s && !["unknown", "unavailable"].includes(s.state);
@@ -52,6 +67,7 @@ class StratonXScheduleCard extends HTMLElement {
         !(Number.isInteger(config.tank_id) && config.tank_id > 0 && config.tank_id < 65535))
       throw new Error("Select a Schedule points sensor or enter an ATI tank ID.");
     if (this.config && this.config.tank_id !== config.tank_id) { this.draftReady=false; this.feedback=""; }
+    if(config.presets !== undefined && !validPresets(config.presets)) throw new Error("Presets need unique names, six percentages (0–100), and a duration of 1–60 minutes; maximum 20.");
     this.config = {...config}; this.selection = null; this.render();
   }
   set hass(hass) { this._hass = hass; if (!this.shadowRoot.activeElement?.matches(".live-slider, .duration")) this.render(); }
@@ -98,8 +114,8 @@ class StratonXScheduleCard extends HTMLElement {
     }).join("");
     return '<div class="live-panel"><p class="notice">Temporary mix for '+(tank?'all lights in ATI tank '+escape(tank):'a tank group')+'. The saved schedule resumes when the timer ends.</p>'+
       (!tank?'<p>Set a Tank ID in this card’s configuration to enable group controls.</p>':'')+
-      '<div class="presets"><button data-preset="blue"'+disabled+'>Blue photo</button><button data-preset="schedule"'+disabled+'>Copy schedule estimate</button><button data-preset="off"'+disabled+'>Temporary off</button></div>'+
-      '<p class="foot">Presets fill the sliders; press Apply to send. Blue photo uses Royal blue and Blue at 100%.</p>'+
+      '<div class="presets">'+presetsFor(this.config).map((p,i)=>'<button data-named="'+i+'"'+disabled+'>'+escape(p.name)+'</button>').join("")+'<button data-preset="schedule"'+disabled+'>Copy schedule estimate</button><button data-preset="off"'+disabled+'>Temporary off</button></div>'+
+      '<p class="foot">Presets fill the sliders and duration; press Apply to send. Edit named presets in the dashboard card editor.</p>'+
       CHANNELS.map(([name,color],i)=>'<label class="live-channel"><span>'+name+'</span><output id="level-'+i+'">'+this.draft[i]+'%</output><input class="live-slider" data-channel="'+i+'" type="range" min="0" max="100" step="1" value="'+this.draft[i]+'" style="accent-color:'+color+'" aria-label="'+name+' requested percentage"'+disabled+'></label>').join("")+
       '<label class="duration-label">Duration (minutes)<input class="duration" type="number" min="1" max="60" step="1" value="'+this.duration+'"'+disabled+'></label>'+
       '<div class="actions"><button class="apply"'+(this.busy||!tank||!this.draftReady?' disabled':'')+'>'+(this.busy?'Working…':'Apply to tank')+'</button><button class="resume"'+(this.busy||!tank?' disabled':'')+'>Resume schedule</button></div>'+
@@ -107,6 +123,11 @@ class StratonXScheduleCard extends HTMLElement {
       '<details open><summary>Group timers · last poll</summary><ul>'+(timers||'<li>No configured group members available</li>')+'</ul></details></div>';
   }
   bindLive(members) {
+    this.shadowRoot.querySelectorAll("[data-named]").forEach(button=>button.onclick=()=>{
+      const preset=presetsFor(this.config)[Number(button.dataset.named)];
+      this.draft=[...preset.channels];this.duration=preset.duration_minutes;this.draftReady=true;
+      this.feedback=preset.name+" loaded. Press Apply to send to the tank.";this.render();
+    });
     this.shadowRoot.querySelectorAll(".live-slider").forEach(input=>{
       input.oninput=()=>{this.draft[Number(input.dataset.channel)]=Number(input.value);this.draftReady=true;
         this.shadowRoot.getElementById("level-"+input.dataset.channel).textContent=input.value+"%";
@@ -121,7 +142,7 @@ class StratonXScheduleCard extends HTMLElement {
         const values=time===null?null:atTime(member?.attributes.nodes,time);
         if(!good(member)||!values){this.feedback="Schedule estimate unavailable. Refresh schedule and clock first.";this.render();return;}
         this.draft=values.map(Math.round);
-      } else this.draft=button.dataset.preset==="blue"?[0,100,100,0,0,0]:Array(6).fill(0);
+      } else this.draft=Array(6).fill(0);
       this.draftReady=true;this.feedback="Draft prepared. Press Apply to send to the tank.";this.render();
     });
     this.shadowRoot.querySelector(".apply").onclick=()=>this.sendLive();
@@ -220,12 +241,56 @@ class StratonXScheduleCard extends HTMLElement {
   }
 }
 class StratonXScheduleEditor extends HTMLElement {
+
+  savePresets(presets) {
+    this.config={...this.config,presets};
+    this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:this.config},bubbles:true,composed:true}));
+  }
+  presetEditor() {
+    const presets=JSON.parse(JSON.stringify(presetsFor(this.config)));
+    const section=document.createElement("section");section.className="preset-editor";
+    const heading=document.createElement("h3");heading.textContent="Named live presets";section.append(heading);
+    const note=document.createElement("p");note.textContent="Saved with this card for all users. Channel order: UV / Violet, Royal blue, Blue, Cyan / Horti white, White, Red. Save the dashboard after editing.";section.append(note);
+    presets.forEach((preset,index)=>{
+      const box=document.createElement("fieldset");box.dataset.presetIndex=index;
+      const legend=document.createElement("legend");legend.textContent="Preset "+(index+1);box.append(legend);
+      const fields=[["name","Name",preset.name],["duration_minutes","Duration (minutes)",preset.duration_minutes],...CHANNELS.map(([label],i)=>["channel"+i,label+" (%)",preset.channels[i]])];
+      fields.forEach(([key,label,value])=>{
+        const wrap=document.createElement("label");wrap.textContent=label;
+        const input=document.createElement("input");input.value=value;input.dataset.field=key;
+        if(key==="name"){input.maxLength=60;input.required=true;}
+        else{input.type="number";input.min=key==="duration_minutes"?"1":"0";input.max=key==="duration_minutes"?"60":"100";input.step=key==="duration_minutes"?"1":"any";input.required=true;}
+        input.onchange=()=>{
+          input.setCustomValidity("");
+          if(!input.reportValidity())return;
+          const next=JSON.parse(JSON.stringify(presetsFor(this.config)));
+          if(key.startsWith("channel"))next[index].channels[Number(key.slice(7))]=Number(input.value);
+          else next[index][key]=key==="name"?input.value.trim():Number(input.value);
+          if(!validPresets(next)){input.setCustomValidity("Use a unique name and valid channel levels and duration.");input.reportValidity();return;}
+          this.savePresets(next);
+        };
+        wrap.append(input);box.append(wrap);
+      });
+      const remove=document.createElement("button");remove.type="button";remove.className="remove-preset";remove.textContent="Delete preset";
+      remove.onclick=()=>{const next=JSON.parse(JSON.stringify(presetsFor(this.config)));next.splice(index,1);this.savePresets(next);this.render();};
+      box.append(remove);section.append(box);
+    });
+    const add=document.createElement("button");add.type="button";add.className="add-preset";add.textContent="Add preset";add.disabled=presets.length>=20;
+    add.onclick=()=>{
+      const next=JSON.parse(JSON.stringify(presetsFor(this.config)));let n=1;
+      while(next.some(p=>p.name.trim().toLowerCase()==="preset "+n))n++;
+      next.push({name:"Preset "+n,duration_minutes:10,channels:[0,0,0,0,0,0]});
+      this.savePresets(next);this.render();
+    };
+    section.append(add);this.shadowRoot.append(section);
+  }
+
   constructor(){super();this.attachShadow({mode:"open"});}
   setConfig(config){this.config={...config};this.render();}
-  set hass(hass){this._hass=hass;this.render();}
+  set hass(hass){this._hass=hass;if(!this.shadowRoot.activeElement)this.render();}
   render(){
     if(!this._hass||!this.config)return;
-    this.shadowRoot.innerHTML='<style>label{display:block;margin:12px 0;font:inherit}select,input{display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#182435);border:1px solid var(--divider-color,#aaa);border-radius:6px}</style>';
+    this.shadowRoot.innerHTML='<style>label{display:block;margin:12px 0;font:inherit}fieldset{border:1px solid var(--divider-color,#aaa);border-radius:10px;margin:12px 0;padding:12px}button{padding:10px;cursor:pointer}.preset-editor p{font-size:13px}select,input{display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#182435);border:1px solid var(--divider-color,#aaa);border-radius:6px}</style>';
     for(const [key,label] of [["tank_id","Tank ID (group card; overrides single-light selection)"],["entity","Schedule points sensor (single light)"],["title","Title (optional)"],["time_entity","Light clock sensor (optional)"],["live_entity","Live mode timer sensor (optional)"]]){
       const wrap=document.createElement("label");wrap.textContent=label;
       const field=document.createElement(key==="entity"?"select":"input");
@@ -240,6 +305,7 @@ class StratonXScheduleEditor extends HTMLElement {
       field.onchange=()=>{const next={...this.config,[key]:key==="tank_id"?Number(field.value):field.value};if(!field.value)delete next[key];this.config=next;this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:next},bubbles:true,composed:true}));};
       wrap.append(field);this.shadowRoot.append(wrap);
     }
+    this.presetEditor();
   }
 }
 if(!customElements.get("stratonx-schedule-card"))customElements.define("stratonx-schedule-card",StratonXScheduleCard);
