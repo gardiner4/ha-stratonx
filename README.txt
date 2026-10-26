@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.5.1. Tested with light firmware 1.4.0.2.
+Experimental version 0.5.2. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 

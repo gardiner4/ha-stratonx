@@ -37,7 +37,7 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         await self.poll()
         for _ in range(25): await self.poll()
         self.assertEqual(self.reader.await_count,1)
-        self.c.async_request_refresh=AsyncMock(side_effect=self.poll)
+        self.c.async_refresh=AsyncMock(side_effect=self.poll)
         await self.c.refresh_schedule()
         self.assertEqual(self.reader.await_count,2)
         self.assertEqual(self.c.data["schedule"],SCHEDULE)
@@ -57,7 +57,7 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         await self.poll()
         timestamp=self.c.data["schedule_updated"]
         self.reader.side_effect=ValueError("bad schedule")
-        self.c.async_request_refresh=AsyncMock(side_effect=self.poll)
+        self.c.async_refresh=AsyncMock(side_effect=self.poll)
         with self.assertRaises(HomeAssistantError): await self.c.refresh_schedule()
         self.assertEqual(self.c.data["temperature_1"],40)
         self.assertEqual(self.c.data["schedule_updated"],timestamp)

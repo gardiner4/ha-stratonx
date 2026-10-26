@@ -82,7 +82,8 @@ class StratonCoordinator(DataUpdateCoordinator):
 
     async def refresh_schedule(self):
         self.schedule_requested = True
-        await self.async_request_refresh()
+        # A manual button must await the actual read, not a debounced request.
+        await self.async_refresh()
         if not self.last_update_success:
             raise HomeAssistantError("Schedule refresh failed: light could not be read")
         if (self.data or {}).get("schedule_error"):
