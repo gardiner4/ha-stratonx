@@ -91,19 +91,21 @@ The card is read-only. During a live override it keeps the saved schedule visibl
 3. Open **Settings > Dashboards > Resources**, and add this URL as a **JavaScript module**:
    `/ati_straton_x/stratonx-schedule-card.js?v=0.4.0`
 4. Reload your browser or Companion app, edit a dashboard, and add **ATI Straton X Schedule**.
-5. Select the light's **Schedule points** sensor. Add one card per light.
+5. Enter an ATI **Tank ID** for one card per group, or select a **Schedule points** sensor for a single-light card.
 
 The card finds that fixture's clock and live timer by serial number, so renaming a light does not affect discovery. You can optionally select explicit clock and timer entity IDs in the editor.
 
-Manual card configuration:
+Group mode discovers configured schedule sensors by their actual tank ID. It compares their saved nodes and reports whether they match. A selector lets you inspect each member's schedule and clock; it does not assume every light is synchronized. A live override or unknown timer on any discovered member hides the current estimate. Only lights added to Home Assistant are included.
+
+Manual group card configuration:
 
 ```yaml
 type: custom:stratonx-schedule-card
-entity: sensor.your_light_schedule_points
+tank_id: 12345 # Replace with your ATI tank ID.
 title: Aquarium lighting
 ```
 
-Replace the example entity with your own schedule sensor. Optional configuration keys are `time_entity` and `live_entity`. The integration serves the JavaScript; there is no separate card repository or external chart library. Register the resource once. When updating the card, update its URL's version suffix and reload the frontend.
+For a single-light card, replace `tank_id` with `entity: sensor.your_light_schedule_points`. Optional configuration keys are `time_entity` and `live_entity`. The integration serves the JavaScript; there is no separate card repository or external chart library. Register the resource once. When updating the card, update its URL's version suffix and reload the frontend.
 
 ## Updates
 

@@ -47,8 +47,9 @@ class StratonXScheduleCard extends HTMLElement {
   }
   static getConfigElement() { return document.createElement("stratonx-schedule-card-editor"); }
   setConfig(config) {
-    if (typeof config.entity !== "string" || !config.entity.startsWith("sensor."))
-      throw new Error("Select a Straton X Schedule points sensor.");
+    if (!(typeof config.entity === "string" && config.entity.startsWith("sensor.")) &&
+        !(Number.isInteger(config.tank_id) && config.tank_id > 0 && config.tank_id < 65535))
+      throw new Error("Select a Schedule points sensor or enter an ATI tank ID.");
     this.config = {...config}; this.selection = null; this.render();
   }
   set hass(hass) { this._hass = hass; this.render(); }
@@ -66,19 +67,28 @@ class StratonXScheduleCard extends HTMLElement {
   }
   render() {
     if (!this.config || !this._hass) return;
-    const schedule = this._hass.states[this.config.entity], nodes = schedule?.attributes.nodes;
+    const members = this.config.tank_id ? Object.values(this._hass.states).filter(s =>
+      s.attributes.tank_id === this.config.tank_id && Array.isArray(s.attributes.nodes)) : [];
+    const selectedMember = members.find(s => s.entity_id === this.activeEntity) || members[0];
+    const schedule = this.config.tank_id ? selectedMember : this._hass.states[this.config.entity];
+    const nodes = schedule?.attributes.nodes;
+    const matching = members.length > 0 && members.every(s => validNodes(s.attributes.nodes) && JSON.stringify(s.attributes.nodes) === JSON.stringify(nodes));
+    const memberTimers = members.map(s => this.companions(s).timer);
+    const anyOverride = memberTimers.some(t => good(t) && Number(t.state) > 0);
+    const groupUnknown = members.some(s => !good(s)) || memberTimers.some(t => !good(t) || !/^\d+$/.test(t.state));
+
     const valid = validNodes(nodes), available = good(schedule);
     const {clock, timer} = this.companions(schedule);
     const now = good(clock) ? clockSeconds(clock.state) : null;
     const remaining = good(timer) && /^\d+$/.test(timer.state) ? Number(timer.state) : null;
-    const live = remaining !== null && remaining > 0;
+    const live = (remaining !== null && remaining > 0) || anyOverride;
     const inspected = this.selection !== null;
     const selected = inspected ? this.selection : now;
-    const values = valid && selected !== null && (inspected || (available && remaining === 0)) ? atTime(nodes, selected) : null;
-    const title = this.config.title || schedule?.attributes.friendly_name?.replace(/ Schedule points$/, "") || "Straton X";
+    const values = valid && selected !== null && (inspected || (available && remaining === 0 && !live && !groupUnknown)) ? atTime(nodes, selected) : null;
+    const title = this.config.title || (this.config.tank_id ? "Tank " + this.config.tank_id : schedule?.attributes.friendly_name?.replace(/ Schedule points$/, "")) || "Straton X";
     let notice = !available ? "Light unavailable — saved schedule only." :
-      live ? "Live override active · "+Math.ceil(remaining/60)+" min remaining at last poll. Curves show the saved schedule." :
-      remaining === null ? "Live-mode status unknown — current estimates hidden." :
+      live ? (members.length ? "Live override active on a group member. Current estimates hidden; saved schedule shown." : "Live override active · "+Math.ceil(remaining/60)+" min remaining at last poll. Curves show the saved schedule.") :
+      (remaining === null || groupUnknown) ? "A light or live-mode status is unknown — current estimates hidden." :
       now === null ? "Light clock unknown — current estimates hidden." : "Scheduled mode · estimates at the last light-clock reading";
     if (!valid) notice = "No valid schedule. Select a Schedule points sensor and refresh its schedule.";
     const x = s => 44+s/86400*572, y = v => 212-v/1023*176;
@@ -104,7 +114,7 @@ class StratonXScheduleCard extends HTMLElement {
       :host{display:block}ha-card{display:block;overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#fff));color:var(--primary-text-color,#182435);border-radius:var(--ha-card-border-radius,18px)}
       .wrap{padding:20px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h2{margin:4px 0;font-size:20px;font-weight:650}.eyebrow{font-size:10px;font-weight:700;letter-spacing:1.8px;color:var(--secondary-text-color,#66768b)}
       .pill{padding:6px 10px;border:1px solid var(--divider-color,#dbe1e9);border-radius:20px;font-size:11px;white-space:nowrap}
-      .notice{font-size:12px;line-height:1.6;color:var(--secondary-text-color,#66768b);min-height:38px;margin:12px 0 4px}
+      .group-info{font-size:12px;margin-top:12px;color:var(--secondary-text-color,#66768b)}.group-info label{display:block;margin-top:8px}.member{max-width:100%;padding:5px;color:inherit;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dbe1e9);border-radius:5px}.notice{font-size:12px;line-height:1.6;color:var(--secondary-text-color,#66768b);min-height:38px;margin:12px 0 4px}
       svg{width:100%;display:block;overflow:visible}.grid line{stroke:var(--divider-color,#dbe1e9);stroke-width:.7}.grid text{fill:var(--secondary-text-color,#66768b);font-size:12px}
       .now{stroke:var(--primary-text-color,#182435);stroke-dasharray:4 4}.now-label{fill:var(--primary-text-color,#182435);font-size:12px;font-weight:600}.cursor{stroke:var(--secondary-text-color,#66768b)}
       .readout{display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:12px;gap:8px}.readout strong{font-weight:650}
@@ -118,6 +128,7 @@ class StratonXScheduleCard extends HTMLElement {
       @media(max-width:380px){.wrap{padding:14px}.channel{padding:10px 7px;gap:6px}.name{font-size:11px}}
       </style><ha-card><div class="wrap">
       <header><div><div class="eyebrow">LIGHT SCHEDULE</div><h2>${escape(title)}</h2></div><span class="pill">24 HOURS</span></header>
+      ${this.config.tank_id ? `<div class="group-info">${members.length} configured lights · ${matching ? "saved schedules match" : "schedules differ or are unavailable"}<label>Schedule / clock shown: <select class="member">${members.map(s=>`<option value="${escape(s.entity_id)}" ${s===schedule?"selected":""}>${escape(s.attributes.friendly_name?.replace(/ Schedule points$/, "") || s.attributes.serial)}</option>`).join("")}</select></label></div>` : ""}
       <div class="notice" role="status">${escape(notice)}</div>
       <svg viewBox="0 0 640 250" role="img" aria-label="Saved lighting schedule, six channel percentages over 24 hours">
         <g class="grid">${grid}</g><g>${curves}</g>${marker}${cursor}
@@ -127,6 +138,8 @@ class StratonXScheduleCard extends HTMLElement {
       <div class="channels">${CHANNELS.map(([name,color],i)=>`<button class="channel" type="button" data-index="${i}" aria-pressed="${!this.hiddenChannels.has(i)}" aria-label="Toggle ${name} curve"><span class="swatch" style="background:${color}"></span><span class="name">${name}</span><span class="value">${values ? values[i].toFixed(1)+"%" : "—"}</span></button>`).join("")}</div>
       <p class="foot">Saved schedule · not live output. Tap a channel to hide its curve. Moonlight, acclimation and day-length adjustments are not included.</p>
       </div></ha-card>`;
+    const picker = this.shadowRoot.querySelector(".member");
+    if (picker) picker.onchange = event => {this.activeEntity=event.target.value;this.selection=null;this.render();};
     this.shadowRoot.querySelector(".reset").onclick = () => {this.selection=null;this.render();};
     this.shadowRoot.querySelectorAll(".channel").forEach(button => button.onclick=()=>{
       const i=Number(button.dataset.index); this.hiddenChannels.has(i)?this.hiddenChannels.delete(i):this.hiddenChannels.add(i);
@@ -145,7 +158,7 @@ class StratonXScheduleEditor extends HTMLElement {
   render(){
     if(!this._hass||!this.config)return;
     this.shadowRoot.innerHTML='<style>label{display:block;margin:12px 0;font:inherit}select,input{display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#182435);border:1px solid var(--divider-color,#aaa);border-radius:6px}</style>';
-    for(const [key,label] of [["entity","Schedule points sensor"],["title","Title (optional)"],["time_entity","Light clock sensor (optional)"],["live_entity","Live mode timer sensor (optional)"]]){
+    for(const [key,label] of [["tank_id","Tank ID (group card; overrides single-light selection)"],["entity","Schedule points sensor (single light)"],["title","Title (optional)"],["time_entity","Light clock sensor (optional)"],["live_entity","Live mode timer sensor (optional)"]]){
       const wrap=document.createElement("label");wrap.textContent=label;
       const field=document.createElement(key==="entity"?"select":"input");
       if(key==="entity"){
@@ -156,7 +169,7 @@ class StratonXScheduleEditor extends HTMLElement {
         }
       }
       field.value=this.config[key]||"";
-      field.onchange=()=>{const next={...this.config,[key]:field.value};if(!field.value)delete next[key];this.config=next;this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:next},bubbles:true,composed:true}));};
+      field.onchange=()=>{const next={...this.config,[key]:key==="tank_id"?Number(field.value):field.value};if(!field.value)delete next[key];this.config=next;this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:next},bubbles:true,composed:true}));};
       wrap.append(field);this.shadowRoot.append(wrap);
     }
   }
