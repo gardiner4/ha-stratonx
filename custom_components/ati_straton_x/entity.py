@@ -16,4 +16,4 @@ class StratonEntity(CoordinatorEntity):
 
     @property
     def extra_state_attributes(self):
-        return {"tank_id": self.coordinator.data["tank_id"], "serial": self.coordinator.entry.data["serial"]}
+        return {"tank_id": self.coordinator.data["tank_id"], "serial": self.coordinator.entry.data["serial"], "transport": self.coordinator.data.get("transport", "bluetooth"), "last_read": self.coordinator.data.get("last_seen")}

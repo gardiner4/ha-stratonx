@@ -18,6 +18,10 @@ class StratonButton(StratonEntity, ButtonEntity):
         self.key = key
         self._attr_icon = {"refresh": "mdi:refresh", "sync": "mdi:clock-check-outline", "identify": "mdi:lightbulb-on-outline"}[key]
 
+    @property
+    def available(self):
+        return super().available and (self.key == "refresh" or (self.coordinator.data or {}).get("transport", "bluetooth") == "bluetooth")
+
     async def async_press(self):
         if self.key == "refresh":
             await self.coordinator.refresh_schedule()

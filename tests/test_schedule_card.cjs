@@ -206,6 +206,24 @@ const assert = require("node:assert/strict");
   await page.evaluate(()=>card.hass={states,callService:async()=>{throw new Error("Storage failed");}});
   await page.locator(".publish").click();
   assert.match(await page.locator(".feedback").innerText(),/Publish failed.*Storage failed/);
+
+  await page.evaluate(()=>{
+    Object.values(states).filter(s=>s.attributes.tank_id===42).forEach(s=>s.attributes.transport="wifi");
+    card.hass={states,callService:async()=>calls.push("wifi-write")};
+  });
+  assert.equal(await page.locator(".apply").isDisabled(),true);
+  assert.match(await page.locator(".live-panel").innerText(),/Wi-Fi telemetry fallback active/);
+  await page.locator(".live-slider").first().fill("20");
+  assert.equal(await page.locator(".apply").isDisabled(),true);
+  await page.evaluate(()=>card.sendLive());
+  assert.equal(await page.evaluate(()=>calls.includes("wifi-write")),false);
+  await page.evaluate(()=>{
+    card.shadowRoot.activeElement?.blur();
+    Object.values(states).forEach(s=>delete s.attributes.transport);
+    card.hass={states,callService:async()=>{}};
+  });
+  assert.equal(await page.locator(".apply").isDisabled(),false);
+
   assert.deepEqual(errors,[]);
 
   console.log("PASS: rendering, six curves, interpolation, time inspection, toggles, override/unknown/unavailable states, renamed sensors, escaping and editor. Screenshots saved.");

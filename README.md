@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.5.3. Tested with light firmware 1.4.0.2.
+Experimental version 0.6.0. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -86,10 +86,10 @@ The Schedule tab is read-only; the Live mode tab provides explicit timed group c
 
 ### Add the card
 
-1. Update the integration to **0.5.0 or later** and restart Home Assistant.
+1. Update the integration to **0.6.0 or later** and restart Home Assistant.
 2. Enable **Advanced mode** in your Home Assistant profile if Resources is not visible.
 3. Open **Settings > Dashboards > Resources**, and add this URL as a **JavaScript module**:
-   `/ati_straton_x/stratonx-schedule-card.js?v=0.5.0`
+   `/ati_straton_x/stratonx-schedule-card.js?v=0.6.0`
 4. Reload your browser or Companion app, edit a dashboard, and add **ATI Straton X Schedule**.
 5. Enter an ATI **Tank ID** for one card per group, or select a **Schedule points** sensor for a single-light card.
 
@@ -170,7 +170,7 @@ Presets belong to the card, not the fixture firmware or a global preset library.
 Register this JavaScript module in **Settings → Dashboards → Resources** after installing the integration:
 
 ```text
-/ati_straton_x/stratonx-schedule-card.js?v=0.5.0
+/ati_straton_x/stratonx-schedule-card.js?v=0.6.0
 ```
 
 Then add a manual card with the following YAML. Replace `12345` with your ATI tank ID (shown in the integration's entity attributes). The Maintenance values below are an example mix; adjust them for your aquarium.
@@ -241,3 +241,23 @@ Each light has three diagnostic sensors:
 These use the shared connectable-scanner advertisement cache, checked every 30 seconds, and never open extra Bluetooth connections. Signal and source become unavailable after 180 seconds without a fresh advertisement. Last advertisement and last successful telemetry poll remain visible during an outage. Advertisement timestamps are refreshed while HA is running, not restored across restarts.
 
 RSSI is not the proxy's Wi-Fi signal or a measurement of an active GATT connection. A light can advertise strongly yet reject a connection. Compare the source and timestamp when troubleshooting; switching receivers can change RSSI.
+
+## Optional Wi-Fi fallback and address discovery (0.6.0)
+
+Bluetooth remains the primary connection. If telemetry fails, an optional serial-verified HTTP connection can supply temperature, identity, tank group, and valid clock readings. The **Telemetry connection** diagnostic sensor shows `bluetooth` or `wifi`. Each telemetry entity also includes its transport and last-read timestamp.
+
+1. Add the light through Bluetooth as usual.
+2. Open **Settings → Devices & services → ATI Straton X**, then the light's **Configure** options.
+3. Enter its bare **Wi-Fi IP address or hostname**. Alternatively, leave the address blank and enter **Scan subnet once**, such as `192.168.1.0/24`. Use your lights' actual network, which may differ from Home Assistant's network.
+4. Submit. The integration only saves an address that returns the same fixture serial. A scan searches one private IPv4 subnet of /24 or smaller, with limited concurrency. It may take up to two minutes and can miss slow devices; enter the address manually if needed.
+5. Clear both Wi-Fi fields and submit to disable fallback.
+
+Scanning happens only when requested in options, never on every poll. There is no verified Bluetooth IP lookup or Straton mDNS discovery in this release. If DHCP changes the address, rerun the scan or update it; reserving an address in your router avoids this. A hostname can also track address changes.
+
+Wi-Fi reads use `settings_get` (or `setting_get` on other versions), `temp_get`, `time_get`, and `schedule.json`. There are no HTTP settings, clock, firmware, or lighting writes. Firmware must expose these endpoints and Home Assistant must be able to reach them. Identity is checked on every fallback read; an address reused by another device is rejected. Passwords returned by the settings endpoint are discarded.
+
+Schedules remain startup/manual only. A failed requested Bluetooth schedule read can use Wi-Fi; the schedule sensor records its source and read time. Failed downloads preserve an existing same-tank schedule.
+
+Bluetooth is retried on subsequent polls, with recovery delays capped at 120 seconds. Wi-Fi success does not prove Bluetooth controls work: Identify and Sync clock are unavailable during fallback, and starting a group live mode requires Bluetooth telemetry for every configured member. Resume still makes a best-effort Bluetooth attempt.
+
+The HTTP live-mode timer has not been verified. During Wi-Fi fallback its sensor and channel estimates are **unknown**, rather than reusing stale Bluetooth timer data. Invalid or unset clock dates are also unknown. The saved schedule graph remains available; live controls and estimates recover after a successful Bluetooth poll.

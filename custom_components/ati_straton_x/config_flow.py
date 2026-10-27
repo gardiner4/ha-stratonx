@@ -5,6 +5,7 @@ from homeassistant.core import callback
 from homeassistant.components import bluetooth
 from .const import DOMAIN, DEFAULT_INTERVAL
 from .client import connection, identity
+from .wifi import normalize_host, verified_identity, discover_host, scan_network
 
 
 class StratonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -49,11 +50,57 @@ class StratonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class StratonOptionsFlow(config_entries.OptionsFlow):
+    _scan_task = None
+    _pending = None
+    _scan_error = False
     async def async_step_init(self, user_input=None):
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+        errors = {"base": "wifi_unverified"} if self._scan_error else {}
+        self._scan_error = False
         entry = self.config_entry
+        values = dict(self._pending or entry.options)
+        if user_input is not None:
+            values.update(user_input)
+            host = user_input.get("wifi_host", "").strip()
+            subnet = user_input.get("wifi_scan_subnet", "").strip()
+            try:
+                if subnet:
+                    scan_network(subnet)
+                    self._pending = values
+                    self._scan_task = self.hass.async_create_task(self._scan_and_verify(subnet))
+                    return await self.async_step_scan()
+                if host:
+                    host = normalize_host(host)
+                    await verified_identity(self.hass, host, entry.data["serial"])
+            except Exception:
+                errors["base"] = "wifi_unverified"
+            else:
+                values.pop("wifi_scan_subnet", None)
+                values["wifi_host"] = host
+                return self.async_create_entry(title="", data=values)
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
-            vol.Required("poll_interval", default=entry.options.get("poll_interval", DEFAULT_INTERVAL)): vol.All(vol.Coerce(int), vol.Range(min=30, max=300)),
-            vol.Required("passcode", default=entry.options.get("passcode", entry.data.get("passcode", 0))): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
-        }))
+            vol.Required("poll_interval", default=values.get("poll_interval", DEFAULT_INTERVAL)): vol.All(vol.Coerce(int), vol.Range(min=30, max=300)),
+            vol.Required("passcode", default=values.get("passcode", entry.data.get("passcode", 0))): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
+            vol.Optional("wifi_host", description={"suggested_value": values.get("wifi_host", "")}): str,
+            vol.Optional("wifi_scan_subnet", default=""): str,
+        }), errors=errors)
+
+    async def _scan_and_verify(self, subnet):
+        host = await discover_host(self.hass, subnet, self.config_entry.data["serial"])
+        await verified_identity(self.hass, host, self.config_entry.data["serial"])
+        return host
+
+    async def async_step_scan(self, user_input=None):
+        if not self._scan_task.done():
+            return self.async_show_progress(step_id="scan", progress_action="wifi_scan", progress_task=self._scan_task)
+        return self.async_show_progress_done(next_step_id="scan_finish")
+
+    async def async_step_scan_finish(self, user_input=None):
+        try:
+            host = self._scan_task.result()
+        except Exception:
+            self._scan_error = True
+            self._scan_task = None
+            return await self.async_step_init()
+        self._pending.pop("wifi_scan_subnet", None)
+        self._pending["wifi_host"] = host
+        return self.async_create_entry(title="", data=self._pending)

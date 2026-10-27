@@ -1,4 +1,4 @@
-/* ATI Straton X schedule / live card 0.5.0, no external dependencies. */
+/* ATI Straton X schedule / live card 0.6.0, no external dependencies. */
 export const CHANNELS = [
   ["UV / Violet", "#c43ce3"], ["Royal blue", "#386bff"], ["Blue", "#00a7ef"],
   ["Cyan / Horti white", "#00b8b9"], ["White", "#9ba6b6"], ["Red", "#ef5555"],
@@ -95,8 +95,11 @@ class StratonXScheduleCard extends HTMLElement {
     } catch(error) {this.feedback="Publish failed: "+(error?.message||String(error));}
     finally{this.busy=false;this.render();}
   }
+  wifiFallback() {
+    return Object.values(this._hass.states).some(s => s.attributes.tank_id === this.config.tank_id && s.attributes.transport === "wifi");
+  }
   async sendLive(resume=false) {
-    if(this.busy || !this.config.tank_id || (!resume && !this.draftReady)) return;
+    if(this.busy || !this.config.tank_id || (!resume && (!this.draftReady || this.wifiFallback()))) return;
     const tank=this.config.tank_id;
     if(!resume && (!Number.isInteger(this.duration)||this.duration<1||this.duration>60 ||
       !this.draft.every(v=>Number.isFinite(v)&&v>=0&&v<=100))) {
@@ -125,12 +128,13 @@ class StratonXScheduleCard extends HTMLElement {
     }).join("");
     return '<div class="live-panel"><p class="notice">Temporary mix for '+(tank?'all lights in ATI tank '+escape(tank):'a tank group')+'. The saved schedule resumes when the timer ends.</p>'+
       (!tank?'<p>Set a Tank ID in this card’s configuration to enable group controls.</p>':'')+
+      (this.wifiFallback()?'<p class="notice">Wi-Fi telemetry fallback active. Apply requires Bluetooth recovery. Resume can still attempt Bluetooth.</p>':'')+
       '<div class="presets">'+presetsFor(this.config).map((p,i)=>'<button data-named="'+i+'"'+disabled+'>'+escape(p.name)+'</button>').join("")+'<button data-preset="schedule"'+disabled+'>Copy schedule estimate</button><button data-preset="off"'+disabled+'>Temporary off</button></div>'+
       '<button class="publish"'+(this.busy||!tank?' disabled':'')+'>Publish presets to automations</button><p class="foot">Publishing saves the named card presets, not unsaved slider adjustments. Matching names in this tank are updated; lights do not change.</p>'+
       '<p class="foot">Presets fill the sliders and duration; press Apply to send. Edit named presets in the dashboard card editor.</p>'+
       CHANNELS.map(([name,color],i)=>'<label class="live-channel"><span>'+name+'</span><output id="level-'+i+'">'+this.draft[i]+'%</output><input class="live-slider" data-channel="'+i+'" type="range" min="0" max="100" step="1" value="'+this.draft[i]+'" style="accent-color:'+color+'" aria-label="'+name+' requested percentage"'+disabled+'></label>').join("")+
       '<label class="duration-label">Duration (minutes)<input class="duration" type="number" min="1" max="60" step="1" value="'+this.duration+'"'+disabled+'></label>'+
-      '<div class="actions"><button class="apply"'+(this.busy||!tank||!this.draftReady?' disabled':'')+'>'+(this.busy?'Working…':'Apply to tank')+'</button><button class="resume"'+(this.busy||!tank?' disabled':'')+'>Resume schedule</button></div>'+
+      '<div class="actions"><button class="apply"'+(this.busy||!tank||!this.draftReady||this.wifiFallback()?' disabled':'')+'>'+(this.busy?'Working…':'Apply to tank')+'</button><button class="resume"'+(this.busy||!tank?' disabled':'')+'>Resume schedule</button></div>'+
       '<p class="feedback" role="status">'+escape(this.feedback||'Requested levels — not measured output. Sliders do not change lights until Apply.')+'</p>'+
       '<details open><summary>Group timers · last poll</summary><ul>'+(timers||'<li>No configured group members available</li>')+'</ul></details></div>';
   }
@@ -144,7 +148,7 @@ class StratonXScheduleCard extends HTMLElement {
     this.shadowRoot.querySelectorAll(".live-slider").forEach(input=>{
       input.oninput=()=>{this.draft[Number(input.dataset.channel)]=Number(input.value);this.draftReady=true;
         this.shadowRoot.getElementById("level-"+input.dataset.channel).textContent=input.value+"%";
-        this.shadowRoot.querySelector(".apply").disabled=this.busy||!this.config.tank_id;};
+        this.shadowRoot.querySelector(".apply").disabled=this.busy||!this.config.tank_id||this.wifiFallback();};
     });
     this.shadowRoot.querySelector(".duration").oninput=e=>{this.duration=Number(e.target.value);};
     this.shadowRoot.querySelectorAll("[data-preset]").forEach(button=>button.onclick=()=>{

@@ -18,6 +18,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         ("local_time", "Light date and time"), ("rtc_time", "Hardware clock"),
         ("clock_offset", "Clock offset"), ("hardware", "Hardware version"),
         ("live_remaining", "Live mode remaining"),
+        ("transport", "Telemetry connection"),
     )])
     async_add_entities([AdvertisementSensor(c, key, name) for key, name in (
         ("bluetooth_signal", "Bluetooth signal"),
@@ -46,7 +47,7 @@ class StratonSensor(StratonEntity, SensorEntity):
         elif key in ("last_seen", "schedule_updated", "rtc_time"):
             self._attr_device_class = SensorDeviceClass.TIMESTAMP
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
-        elif key in ("tank_id", "firmware", "hardware"):
+        elif key in ("tank_id", "firmware", "hardware", "transport"):
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
@@ -70,6 +71,7 @@ class StratonSensor(StratonEntity, SensorEntity):
             attrs.update(self.coordinator.data.get("schedule") or {})
             attrs["refresh_policy"] = "Startup or manual; refresh after edits in the ATI app"
             attrs["last_refresh_error"] = self.coordinator.data.get("schedule_error")
+            attrs["schedule_source"] = self.coordinator.data.get("schedule_source")
             attrs["channel_scale"] = "0–1023 (schedule values, not live output)"
         elif self.key == "live_remaining":
             attrs["read_at"] = self.coordinator.data.get("live_read_at")
@@ -82,6 +84,10 @@ class StratonSensor(StratonEntity, SensorEntity):
                 attrs["time_basis"] = "Light's configured local time; snapshot at last poll"
             elif self.key == "clock_offset":
                 attrs["positive_means"] = "Light hardware clock ahead of Home Assistant (UTC)"
+        elif self.key == "transport":
+            attrs["wifi_host"] = self.coordinator.entry.options.get("wifi_host")
+            attrs["bluetooth_error"] = self.coordinator.data.get("bluetooth_error")
+            attrs["controls_require_bluetooth"] = True
         return attrs
 
 

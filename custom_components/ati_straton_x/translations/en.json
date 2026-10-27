@@ -3,11 +3,46 @@
   "config": {
     "flow_title": "{name}",
     "step": {
-      "user": {"title": "Choose a Straton X", "data": {"address": "Light"}},
-      "confirm": {"title": "Add Straton X", "description": "Connect to {address} and read its identity and tank group. Leave the passcode at 0 unless you changed it in ATI.", "data": {"passcode": "ATI passcode"}}
+      "user": {
+        "title": "Choose a Straton X",
+        "data": {
+          "address": "Light"
+        }
+      },
+      "confirm": {
+        "title": "Add Straton X",
+        "description": "Connect to {address} and read its identity and tank group. Leave the passcode at 0 unless you changed it in ATI.",
+        "data": {
+          "passcode": "ATI passcode"
+        }
+      }
     },
-    "error": {"cannot_connect": "Could not identify the light. Check Bluetooth range and close the ATI app connection, then retry."},
-    "abort": {"already_configured": "This light is already configured.", "no_devices_found": "No unconfigured Straton X lights are visible. Check your Bluetooth proxy and try again."}
+    "error": {
+      "cannot_connect": "Could not identify the light. Check Bluetooth range and close the ATI app connection, then retry."
+    },
+    "abort": {
+      "already_configured": "This light is already configured.",
+      "no_devices_found": "No unconfigured Straton X lights are visible. Check your Bluetooth proxy and try again."
+    }
   },
-  "options": {"step": {"init": {"title": "Polling", "description": "Connections are serialized across lights. Schedules refresh every 15 minutes. Failed polls back off up to 15 minutes.", "data": {"poll_interval": "Polling interval (30–300 seconds)", "passcode": "ATI passcode"}}}}
+  "options": {
+    "step": {
+      "init": {
+        "title": "Polling and Wi-Fi fallback",
+        "description": "Schedules are read at startup or manually. Bluetooth recovery delays are 30–120 seconds. Optional Wi-Fi fallback reads telemetry only. Enter a bare IP/hostname, or enter a private subnet (for example 192.168.1.0/24) to scan once for this light's serial. Scanning can take up to two minutes. Clear both Wi-Fi fields to disable fallback. Live-mode controls still require Bluetooth.",
+        "data": {
+          "poll_interval": "Polling interval (30–300 seconds)",
+          "passcode": "ATI passcode",
+          "wifi_host": "Wi-Fi IP address or hostname (optional)",
+          "wifi_scan_subnet": "Scan subnet once (optional, /24 or smaller)"
+        }
+      }
+    },
+    "error": {
+      "wifi_unverified": "Could not uniquely verify this light over Wi-Fi. Check its IP/subnet and network access. A scan can miss slow devices; try entering the IP directly."
+    },
+    "progress": {
+      "wifi_scan": "Searching the selected subnet for this light's serial. This can take up to two minutes."
+    }
+  }
 }

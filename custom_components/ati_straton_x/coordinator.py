@@ -10,6 +10,7 @@ from .const import DOMAIN, DEFAULT_INTERVAL, MAIN
 from .client import connection, identity, query, read_schedule
 from .protocol import header, temperatures, clocks, identify_packet, live_remaining
 from .live import apply_live
+from .wifi import read_telemetry, get_json, parse_schedule, verified_identity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ class StratonCoordinator(DataUpdateCoordinator):
         for attempt in range(2):
             try:
                 data = await self._read_once()
+                if data.pop("_schedule_attempted", False) and data.get("schedule_error") and self.entry.options.get("wifi_host"):
+                    await self._wifi_schedule(data)
                 self.failures = 0
                 self.update_interval = timedelta(seconds=self.interval)
                 return data
@@ -37,12 +40,54 @@ class StratonCoordinator(DataUpdateCoordinator):
                     # connection() has exited: other fixtures can use the slot.
                     await asyncio.sleep(2)
                     continue
-                self._record_failure()
-                raise UpdateFailed(str(exc)) from exc
+                return await self._wifi_or_fail(exc)
             except Exception as exc:
                 # Identity/decoder/configuration errors are not transport faults.
-                self._record_failure()
-                raise UpdateFailed(str(exc)) from exc
+                return await self._wifi_or_fail(exc)
+
+    async def _wifi_or_fail(self, bluetooth_error):
+        self._record_failure()
+        host = self.entry.options.get("wifi_host")
+        if not host:
+            raise UpdateFailed(str(bluetooth_error)) from bluetooth_error
+        try:
+            data = await read_telemetry(self.hass, host, self.entry.data["serial"])
+            previous = self.data or {}
+            if previous.get("tank_id") == data["tank_id"]:
+                for key in ("schedule", "schedule_updated", "schedule_error", "schedule_source"):
+                    if key in previous:
+                        data[key] = previous[key]
+            elif previous.get("tank_id") is not None:
+                self.schedule_requested = True
+            if self.schedule_requested:
+                self.schedule_requested = False
+                try:
+                    data["schedule"] = parse_schedule(await get_json(self.hass, host, "schedule.json"))
+                    data["schedule_source"] = "wifi"
+                    data["schedule_updated"] = datetime.now(timezone.utc)
+                    data.pop("schedule_error", None)
+                except Exception:
+                    data["schedule_error"] = "Wi-Fi schedule read failed; refresh to retry"
+            data["bluetooth_error"] = str(bluetooth_error)
+            return data
+        except Exception as exc:
+            raise UpdateFailed("Bluetooth failed and Wi-Fi fallback was unavailable or could not verify this light") from exc
+
+    async def _wifi_schedule(self, data):
+        """Retry an explicitly requested schedule read via the verified host."""
+        host = self.entry.options["wifi_host"]
+        try:
+            info = await verified_identity(self.hass, host, self.entry.data["serial"])
+            if info["tank_id"] != data["tank_id"]:
+                raise ValueError("Tank changed during schedule read")
+            schedule = parse_schedule(await get_json(self.hass, host, "schedule.json"))
+        except Exception:
+            data["schedule_error"] = "Schedule read failed over Bluetooth and Wi-Fi; refresh to retry"
+        else:
+            data["schedule"] = schedule
+            data["schedule_updated"] = datetime.now(timezone.utc)
+            data["schedule_source"] = "wifi"
+            data.pop("schedule_error", None)
 
     def _record_failure(self):
         self.failures += 1
@@ -91,8 +136,10 @@ class StratonCoordinator(DataUpdateCoordinator):
                 self.schedule_requested = True
             if self.schedule_requested:
                 self.schedule_requested = False
+                data["_schedule_attempted"] = True
                 try:
                     data["schedule"] = await read_schedule(client, tank, passcode)
+                    data["schedule_source"] = "bluetooth"
                     data["schedule_updated"] = datetime.now(timezone.utc)
                     data.pop("schedule_error", None)
                 except Exception as exc:
@@ -100,6 +147,7 @@ class StratonCoordinator(DataUpdateCoordinator):
                     # trigger another large download on every normal poll.
                     data["schedule_error"] = str(exc)
                     _LOGGER.warning("Schedule read failed for %s: %s", info["serial"], exc)
+            data["transport"] = "bluetooth"
             data["last_seen"] = datetime.now(timezone.utc)
             return data
 

@@ -58,8 +58,8 @@ def register_services(hass):
         if len({c.entry.options.get("passcode", c.entry.data.get("passcode", 0)) for c in candidates}) != 1:
             raise HomeAssistantError("Configured lights in this tank have different passcodes; correct their options first")
         if call.service == "set_tank_live":
-            if missing or any(not c.last_update_success for c in candidates):
-                raise HomeAssistantError("A configured light in this tank is unavailable; live mode was not started")
+            if missing or any(not c.last_update_success or c.data.get("transport", "bluetooth") != "bluetooth" for c in candidates):
+                raise HomeAssistantError("A configured light in this tank has no verified Bluetooth telemetry; live mode was not started")
         seconds = call.data["duration_minutes"] * 60 if call.service == "set_tank_live" else 0
         channels = [round(call.data[key] * 1023 / 100) for key in CHANNELS] if seconds else None
         # Firmware broadcasts are lossy. Contact every configured member so that
