@@ -1,5 +1,9 @@
 """Test manual schedule cadence and cached-advertisement diagnostics in HA runtime."""
 import unittest
+import asyncio
+from bleak.exc import BleakError
+from aioesphomeapi.core import APIConnectionError
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from contextlib import asynccontextmanager
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, Mock, patch
@@ -81,6 +85,52 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         last=sm.StratonSensor(self.c,"last_seen","Last successful poll")
         self.assertTrue(last.available)
         self.assertFalse(entity.available)
+
+
+    async def test_fresh_connection_and_identity_on_transport_retry(self):
+        events=[]
+        @asynccontextmanager
+        async def session(*args):
+            token=object()
+            events.append(("enter",token))
+            try: yield token
+            finally: events.append(("exit",token))
+        async def pause(seconds):
+            self.assertEqual(seconds,2)
+            self.assertEqual(events[-1][0],"exit")
+        with patch.object(cm,"connection",session), patch.object(cm.asyncio,"sleep",AsyncMock(side_effect=pause)), patch.object(cm,"identity",AsyncMock(side_effect=[APIConnectionError("proxy GATT failure"),dict(self.info)])) as ident:
+            await self.poll()
+            self.assertEqual(ident.await_count,2)
+        self.assertEqual([e[0] for e in events],["enter","exit","enter","exit"])
+        self.assertIsNot(events[0][1],events[2][1])
+        self.assertEqual(self.c.failures,0)
+        self.assertEqual(self.c.update_interval.total_seconds(),60)
+
+    async def test_exhaustion_backoff_and_recovery(self):
+        with patch.object(self.c,"_read_once",AsyncMock(side_effect=TimeoutError("timeout"))) as read, patch.object(cm.asyncio,"sleep",AsyncMock()):
+            for expected in (30,60,120,120):
+                with self.assertRaises(UpdateFailed): await self.poll()
+                self.assertEqual(self.c.update_interval.total_seconds(),expected)
+            self.assertEqual(read.await_count,8)
+        await self.poll()
+        self.assertEqual(self.c.failures,0)
+        self.assertEqual(self.c.update_interval.total_seconds(),60)
+
+    async def test_identity_failure_and_cancellation_not_retried(self):
+        for error in (ValueError("Light identity changed"),asyncio.CancelledError()):
+            with patch.object(self.c,"_read_once",AsyncMock(side_effect=error)) as read, patch.object(cm.asyncio,"sleep",AsyncMock()) as sleep:
+                with self.assertRaises(asyncio.CancelledError if isinstance(error,asyncio.CancelledError) else UpdateFailed):
+                    await self.poll()
+                self.assertEqual(read.await_count,1)
+                sleep.assert_not_awaited()
+
+    async def test_control_failure_not_replayed(self):
+        client=NS(write_gatt_char=AsyncMock(side_effect=BleakError("GATT 133")))
+        @asynccontextmanager
+        async def session(*args): yield client
+        with patch.object(cm,"connection",session), patch.object(cm,"identify_packet",Mock(return_value=b"identify")):
+            with self.assertRaises(HomeAssistantError): await self.c.identify()
+        self.assertEqual(client.write_gatt_char.await_count,1)
 
 class AdvertisementTests(unittest.TestCase):
     def setUp(self):

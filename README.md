@@ -2,7 +2,7 @@
 
 Monitor ATI Straton X lights through Bluetooth using Home Assistant's Bluetooth adapter or a connectable ESPHome Bluetooth proxy.
 
-Experimental version 0.5.2. Tested with light firmware 1.4.0.2.
+Experimental version 0.5.3. Tested with light firmware 1.4.0.2.
 
 ## Installation with HACS
 
@@ -123,7 +123,7 @@ These are **schedule estimates, not measured live output**. The daytime plateau 
 
 Estimates become **unknown** when a timed live override is active, its timer state is unknown, the clock is invalid, or the schedule cannot be interpreted. Failed polls make the entities unavailable. Estimates resume after a successful poll confirms the override has ended. Outside the schedule's time range, zero is estimated only if both boundary nodes are zero; other boundary cases remain unknown.
 
-Moonlight, acclimation, and day-length adjustments are **not included or detected**. If you use those features, these sensors can differ from actual output. Sensor attributes include this limitation, the calculation status, the light-clock snapshot, and the schedule's last-read time. Schedule changes in the ATI app appear after **Refresh schedule** or the next scheduled refresh.
+Moonlight, acclimation, and day-length adjustments are **not included or detected**. If you use those features, these sensors can differ from actual output. Sensor attributes include this limitation, the calculation status, the light-clock snapshot, and the schedule's last-read time. Schedule changes in the ATI app appear after **Refresh schedule** or an integration reload.
 
 ## Current limitations
 
@@ -133,7 +133,7 @@ Other firmware versions have not been verified.
 
 ## Troubleshooting
 
-If a light is missing or unavailable, check Bluetooth range and that the adapter or proxy supports active connections. Failed polls retry automatically with increasing delays.
+If a light is missing or unavailable, check Bluetooth range and that the adapter or proxy supports active connections. A failed telemetry read caused by a Bluetooth or transport error gets one fresh connection attempt after a two-second pause. Identity and tank membership are checked again, and read requests use the configured passcode. If both attempts fail, entities become unavailable and recovery polls run after 30, 60, then at most 120 seconds; a successful poll restores the configured interval. Connection time and shared-proxy queueing add to these delays. Identity/format errors are not immediately retried. Identify, clock sync, and live-mode commands are never automatically replayed by this recovery mechanism.
 
 To stop polling, disable the light's integration entry under **Settings > Devices & services**.
 
